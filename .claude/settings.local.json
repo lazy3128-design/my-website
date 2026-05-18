@@ -4,7 +4,9 @@
       "WebFetch(domain:smithery.ai)",
       "WebSearch",
       "Bash(git clone:*)",
-      "Bash(git init:*)"
+      "Bash(git init:*)",
+      "Bash(cp \"/root/.claude/uploads/d2c2055b-0b76-4ecb-8d25-b500ad2515b2/9a87b60d-UTAGE_VSL______v1.md\" \"VSL/UTAGE_VSL_通しチェック版_v1.md\")",
+      "Bash(cp \"/root/.claude/uploads/d2c2055b-0b76-4ecb-8d25-b500ad2515b2/ee6e2f91-UTAGE_VSL________.md\" \"VSL/マーケ作業ガイドライン.md\")"
     ]
   }
 }
