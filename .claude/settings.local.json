@@ -9,7 +9,8 @@
       "Bash(cp \"/root/.claude/uploads/d2c2055b-0b76-4ecb-8d25-b500ad2515b2/ee6e2f91-UTAGE_VSL________.md\" \"VSL/マーケ作業ガイドライン.md\")",
       "Bash(cp \"/root/.claude/uploads/d2c2055b-0b76-4ecb-8d25-b500ad2515b2/d22cd106-UTAGE_____VSL_____1.xlsx\" \"VSL/UTAGE_リサーチVSL分析_v1.xlsx\")",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "mcp__f5a1a217-36d1-4b3c-97be-4ca9793e4bc0__search_files"
     ]
   }
 }
