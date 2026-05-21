@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mp4スライド → PDF 変換</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+    margin: 0; background: #f4f5f7; color: #1f2328; line-height: 1.7;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 32px 20px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .lead { color: #57606a; margin: 0 0 24px; font-size: 14px; }
+  #drop {
+    border: 3px dashed #c9ced6; border-radius: 14px; background: #fff;
+    padding: 48px 24px; text-align: center; cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  #drop:hover { border-color: #4c8dff; }
+  #drop.over { border-color: #4c8dff; background: #eef4ff; }
+  #drop .big { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+  #drop .sub { font-size: 13px; color: #57606a; }
+  .btn {
+    display: inline-block; margin-top: 14px; padding: 10px 22px;
+    background: #4c8dff; color: #fff; border: none; border-radius: 8px;
+    font-size: 14px; font-weight: 700; cursor: pointer;
+  }
+  .btn:disabled { background: #b9c2cf; cursor: default; }
+  .btn.dl { background: #1f883d; font-size: 16px; padding: 13px 30px; }
+  #status { margin-top: 20px; font-size: 14px; }
+  .bar { height: 12px; background: #e3e6ea; border-radius: 6px; overflow: hidden; margin-top: 8px; }
+  .bar > div { height: 100%; width: 0; background: #4c8dff; transition: width .2s; }
+  .gallery { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .gallery img { width: 120px; border: 1px solid #d0d7de; border-radius: 4px; }
+  details { margin-top: 26px; font-size: 13px; color: #57606a; }
+  summary { cursor: pointer; }
+  .row { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+  .row input[type=range] { flex: 1; }
+  .note { font-size: 12px; color: #8a929c; margin-top: 4px; }
+  .hide { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>mp4スライド → PDF 変換</h1>
+  <p class="lead">動画の中でスライドが切り替わった場面を1枚ずつ集めて、1つのPDFにします。インストール不要・ブラウザだけで動きます。</p>
+
+  <div id="drop">
+    <div class="big">ここに mp4 動画をドラッグ＆ドロップ</div>
+    <div class="sub">または下のボタンから選んでください</div>
+    <button class="btn" id="pick" type="button">動画ファイルを選ぶ</button>
+    <input type="file" id="file" accept="video/mp4,video/*" class="hide">
+  </div>
+
+  <div id="status"></div>
+  <div class="bar hide" id="barWrap"><div id="barFill"></div></div>
+  <div class="gallery" id="gallery"></div>
+  <div id="result"></div>
+
+  <details>
+    <summary>うまく取れないときの調整</summary>
+    <div class="row">
+      <span>枚数：少なめ</span>
+      <input type="range" id="sens" min="1" max="10" value="7">
+      <span>多め</span>
+    </div>
+    <div class="note">スライドが取りこぼされるときは「多め」に、関係ない画面まで増えすぎるときは「少なめ」に動かして、もう一度ドロップしてください。</div>
+  </details>
+</div>
+
+<video id="video" class="hide" muted playsinline preload="auto"></video>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const drop = $("drop"), fileInput = $("file"), video = $("video");
+const statusEl = $("status"), barWrap = $("barWrap"), barFill = $("barFill");
+const gallery = $("gallery"), result = $("result"), sens = $("sens");
+
+let busy = false;
+
+$("pick").addEventListener("click", e => { e.stopPropagation(); fileInput.click(); });
+drop.addEventListener("click", () => { if (!busy) fileInput.click(); });
+fileInput.addEventListener("change", () => { if (fileInput.files[0]) start(fileInput.files[0]); });
+
+["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e => {
+  e.preventDefault(); if (!busy) drop.classList.add("over");
+}));
+["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => {
+  e.preventDefault(); drop.classList.remove("over");
+}));
+drop.addEventListener("drop", e => {
+  e.preventDefault();
+  if (busy) return;
+  const f = e.dataTransfer.files[0];
+  if (f) start(f);
+});
+
+function setStatus(msg) { statusEl.textContent = msg; }
+
+function seekTo(t) {
+  return new Promise(resolve => {
+    let done = false;
+    const finish = () => { if (done) return; done = true; video.removeEventListener("seeked", finish); resolve(); };
+    video.addEventListener("seeked", finish);
+    setTimeout(finish, 3000); // 念のためのタイムアウト
+    video.currentTime = t;
+  });
+}
+
+// 画面を縮小グレースケール格子にする
+const GRID = 64;        // 格子の細かさ
+const CELL_TH = 25;     // 1マスが「変わった」とみなす明るさ差
+function signature() {
+  const c = signature._c || (signature._c = document.createElement("canvas"));
+  c.width = GRID; c.height = GRID;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(video, 0, 0, GRID, GRID);
+  const d = ctx.getImageData(0, 0, GRID, GRID).data;
+  const g = new Uint8ClampedArray(GRID * GRID);
+  for (let i = 0; i < GRID * GRID; i++) {
+    g[i] = 0.299 * d[i*4] + 0.587 * d[i*4+1] + 0.114 * d[i*4+2];
+  }
+  return g;
+}
+// 変化したマスの割合を返す（スライドが切り替わると大きくなる）
+function diff(a, b) {
+  let changed = 0;
+  for (let i = 0; i < a.length; i++) {
+    if (Math.abs(a[i] - b[i]) > CELL_TH) changed++;
+  }
+  return changed / a.length;
+}
+
+async function start(file) {
+  busy = true;
+  gallery.innerHTML = ""; result.innerHTML = "";
+  barWrap.classList.remove("hide"); barFill.style.width = "0%";
+  setStatus("動画を読み込んでいます…");
+
+  const url = URL.createObjectURL(file);
+  video.src = url;
+  try {
+    await new Promise((res, rej) => {
+      video.onloadedmetadata = res;
+      video.onerror = () => rej(new Error("この動画ファイルは読み込めませんでした。"));
+    });
+  } catch (err) {
+    setStatus("⚠ " + err.message);
+    busy = false; URL.revokeObjectURL(url); return;
+  }
+
+  const duration = video.duration;
+  const threshold = 0.030 - Number(sens.value) * 0.0025; // 感度スライダー
+  const sampleStep = 1.0;   // 何秒ごとに調べるか
+  const minGap = 1.2;       // 採用する間隔の最小秒数
+  const maxW = 1920;        // PDFの最大横幅
+
+  // 切り出し用キャンバス
+  const scale = video.videoWidth > maxW ? maxW / video.videoWidth : 1;
+  const fw = Math.round(video.videoWidth * scale);
+  const fh = Math.round(video.videoHeight * scale);
+  const full = document.createElement("canvas");
+  full.width = fw; full.height = fh;
+  const fctx = full.getContext("2d");
+
+  const slides = [];   // { bytes, w, h }
+  let lastSig = null, lastCapT = -999;
+
+  async function capture(t) {
+    fctx.drawImage(video, 0, 0, fw, fh);
+    const blob = await new Promise(r => full.toBlob(r, "image/jpeg", 0.9));
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    slides.push({ bytes, w: fw, h: fh });
+    const img = document.createElement("img");
+    img.src = URL.createObjectURL(blob);
+    gallery.appendChild(img);
+    lastCapT = t;
+  }
+
+  setStatus("スライドの切り替わりを探しています…");
+  for (let t = 0; t < duration; t += sampleStep) {
+    await seekTo(Math.min(t, duration - 0.05));
+    const sig = signature();
+    if (lastSig === null) {
+      await capture(t);                       // 先頭スライド
+    } else if (diff(sig, lastSig) > threshold && (t - lastCapT) >= minGap) {
+      await capture(t);                       // 画面が変わった
+    }
+    lastSig = sig;
+    const pct = Math.min(100, t / duration * 100);
+    barFill.style.width = pct + "%";
+    setStatus(`スライドの切り替わりを探しています… ${Math.round(pct)}％（${slides.length}枚 検出）`);
+  }
+  barFill.style.width = "100%";
+
+  if (!slides.length) {
+    setStatus("⚠ スライドを検出できませんでした。「調整」で『多め』に寄せて、もう一度お試しください。");
+    busy = false; URL.revokeObjectURL(url); return;
+  }
+
+  setStatus(`PDFを作成しています…（${slides.length}枚）`);
+  const pdfBlob = buildPDF(slides);
+  const pdfUrl = URL.createObjectURL(pdfBlob);
+  const baseName = file.name.replace(/\.[^.]+$/, "");
+  const a = document.createElement("a");
+  a.href = pdfUrl;
+  a.download = baseName + "_slides.pdf";
+  a.className = "btn dl";
+  a.textContent = "PDFをダウンロード（" + slides.length + "ページ）";
+  result.innerHTML = "";
+  result.appendChild(a);
+  a.click(); // 自動でダウンロードも開始
+
+  setStatus(`完了しました。スライド ${slides.length}枚 のPDFができました。`);
+  busy = false;
+  URL.revokeObjectURL(url);
+}
+
+// JPEG画像を埋め込んだPDFを手作りする（外部ライブラリ不要）
+function buildPDF(images) {
+  const enc = s => new TextEncoder().encode(s);
+  const parts = [];
+  let len = 0;
+  const offsets = {};
+  const push = data => {
+    const d = typeof data === "string" ? enc(data) : data;
+    parts.push(d); len += d.length;
+  };
+  const startObj = id => { offsets[id] = len; };
+
+  push("%PDF-1.4\n");
+  push(new Uint8Array([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]));
+
+  startObj(1);
+  push("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+
+  const kids = images.map((_, i) => `${3 + 3*i} 0 R`).join(" ");
+  startObj(2);
+  push(`2 0 obj\n<< /Type /Pages /Kids [${kids}] /Count ${images.length} >>\nendobj\n`);
+
+  images.forEach((img, i) => {
+    const pid = 3 + 3*i, cid = 4 + 3*i, iid = 5 + 3*i;
+    const content = `q ${img.w} 0 0 ${img.h} 0 0 cm /Im0 Do Q`;
+
+    startObj(pid);
+    push(`${pid} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${img.w} ${img.h}]` +
+         ` /Resources << /XObject << /Im0 ${iid} 0 R >> >> /Contents ${cid} 0 R >>\nendobj\n`);
+
+    startObj(cid);
+    push(`${cid} 0 obj\n<< /Length ${enc(content).length} >>\nstream\n${content}\nendstream\nendobj\n`);
+
+    startObj(iid);
+    push(`${iid} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${img.w} /Height ${img.h}` +
+         ` /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${img.bytes.length} >>\nstream\n`);
+    push(img.bytes);
+    push("\nendstream\nendobj\n");
+  });
+
+  const total = 2 + 3 * images.length;
+  const xrefAt = len;
+  let xref = `xref\n0 ${total + 1}\n0000000000 65535 f \n`;
+  for (let id = 1; id <= total; id++) {
+    xref += String(offsets[id]).padStart(10, "0") + " 00000 n \n";
+  }
+  push(xref);
+  push(`trailer\n<< /Size ${total + 1} /Root 1 0 R >>\nstartxref\n${xrefAt}\n%%EOF\n`);
+
+  const out = new Uint8Array(len);
+  let p = 0;
+  for (const d of parts) { out.set(d, p); p += d.length; }
+  return new Blob([out], { type: "application/pdf" });
+}
+</script>
+</body>
+</html>
