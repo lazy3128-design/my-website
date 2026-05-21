@@ -46,6 +46,14 @@
   .lb-inner img { max-width: 94vw; max-height: 80vh; background: #fff; border-radius: 4px; }
   .lb-bar { display: flex; gap: 12px; }
   .lb-bar .btn { margin: 0; }
+  #preview { margin-top: 20px; }
+  .step { font-size: 13px; color: #57606a; margin: 0 0 10px; }
+  #prevCanvas {
+    max-width: 100%; border: 1px solid #d0d7de; border-radius: 6px;
+    cursor: crosshair; touch-action: none; display: block;
+  }
+  .prev-btns { display: flex; gap: 10px; }
+  .btn.ghost { background: #e3e6ea; color: #1f2328; }
   details { margin-top: 26px; font-size: 13px; color: #57606a; }
   summary { cursor: pointer; }
   .row { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
@@ -64,6 +72,16 @@
     <div class="sub">または下のボタンから選んでください</div>
     <button class="btn" id="pick" type="button">動画ファイルを選ぶ</button>
     <input type="file" id="file" accept="video/mp4,video/*" class="hide">
+  </div>
+
+  <div id="preview" class="hide">
+    <p class="step"><b>スライド以外で動く部分を囲ってください（任意）</b><br>
+    テロップや発表者のカメラ映像など、スライドと関係なく動く部分をマウスでドラッグして囲むと、その部分は切り替え判定から除外されます。複数囲めます。なければそのまま開始してOKです。</p>
+    <canvas id="prevCanvas"></canvas>
+    <div class="prev-btns" style="margin-top:10px;">
+      <button class="btn" id="goBtn" type="button">この設定で解析を開始</button>
+      <button class="btn ghost" id="clearZones" type="button">囲みを消す</button>
+    </div>
   </div>
 
   <div id="status"></div>
@@ -170,26 +188,56 @@ function signature() {
   }
   return g;
 }
-// 変化したマスの割合を返す（スライドが切り替わると大きくなる）
-function diff(a, b) {
-  let changed = 0;
+// 変化したマスの割合を返す（mask が 0 のマスは判定から除外）
+function diff(a, b, mask) {
+  let changed = 0, total = 0;
   for (let i = 0; i < a.length; i++) {
+    if (!mask[i]) continue;
+    total++;
     if (Math.abs(a[i] - b[i]) > CELL_TH) changed++;
   }
-  return changed / a.length;
+  return total ? changed / total : 0;
 }
 
+// 除外範囲（zones）から判定用マスクを作る。1=判定に使う / 0=無視
+function buildMask(zones) {
+  const mask = new Uint8Array(GRID * GRID).fill(1);
+  for (let i = 0; i < mask.length; i++) {
+    const nx = (i % GRID + 0.5) / GRID, ny = ((i / GRID | 0) + 0.5) / GRID;
+    for (const z of zones) {
+      if (nx >= z.x && nx <= z.x + z.w && ny >= z.y && ny <= z.y + z.h) {
+        mask[i] = 0; break;
+      }
+    }
+  }
+  // 囲みすぎて判定マスが少なすぎる場合は全面に戻す
+  let used = 0;
+  for (const m of mask) used += m;
+  return used >= 64 ? mask : new Uint8Array(GRID * GRID).fill(1);
+}
+
+// --- 状態 ---
+let currentURL = null, zones = [], prevBase = null;
+let dragStart = null, tempRect = null, pendingFile = null;
+const prevCanvas = $("prevCanvas");
+
+function resetUI() {
+  gallery.innerHTML = ""; result.innerHTML = "";
+  $("preview").classList.add("hide");
+  barWrap.classList.add("hide"); barFill.style.width = "0%";
+  cancelBtn.classList.add("hide");
+}
+
+// 動画を読み込み、プレビュー（除外範囲の指定）へ進む
 async function start(file) {
   busy = true; cancelled = false;
-  gallery.innerHTML = ""; result.innerHTML = "";
-  barWrap.classList.remove("hide"); barFill.style.width = "0%";
-  cancelBtn.classList.remove("hide");
-  cancelBtn.disabled = false;
-  cancelBtn.textContent = "処理を中止する";
+  resetUI();
+  zones = [];
   setStatus("動画を読み込んでいます…");
 
-  const url = URL.createObjectURL(file);
-  video.src = url;
+  if (currentURL) URL.revokeObjectURL(currentURL);
+  currentURL = URL.createObjectURL(file);
+  video.src = currentURL;
   try {
     await new Promise((res, rej) => {
       video.onloadedmetadata = res;
@@ -197,17 +245,87 @@ async function start(file) {
     });
   } catch (err) {
     setStatus("⚠ " + err.message);
-    cancelBtn.classList.add("hide");
-    busy = false; URL.revokeObjectURL(url); return;
+    busy = false; return;
   }
+  await showPreview(file);
+}
+
+// 代表コマを表示して除外範囲の指定を受け付ける
+async function showPreview(file) {
+  await seekTo(Math.min(video.duration * 0.3, Math.max(0, video.duration - 0.1)));
+  const pw = Math.min(video.videoWidth, 640);
+  const ph = Math.round(pw * video.videoHeight / video.videoWidth);
+  prevCanvas.width = pw; prevCanvas.height = ph;
+  prevBase = document.createElement("canvas");
+  prevBase.width = pw; prevBase.height = ph;
+  prevBase.getContext("2d").drawImage(video, 0, 0, pw, ph);
+  drawPreview();
+  $("preview").classList.remove("hide");
+  setStatus("テロップやカメラ映像を囲んだら「解析を開始」を押してください。");
+  pendingFile = file;
+  busy = false; // プレビュー中は別の動画も受け付ける
+}
+
+function drawPreview() {
+  const ctx = prevCanvas.getContext("2d");
+  ctx.drawImage(prevBase, 0, 0);
+  ctx.lineWidth = 2; ctx.strokeStyle = "#cf222e";
+  ctx.fillStyle = "rgba(207,34,46,.30)";
+  const all = tempRect ? zones.concat([tempRect]) : zones;
+  for (const z of all) {
+    const x = z.x * prevCanvas.width, y = z.y * prevCanvas.height;
+    const w = z.w * prevCanvas.width, h = z.h * prevCanvas.height;
+    ctx.fillRect(x, y, w, h); ctx.strokeRect(x, y, w, h);
+  }
+}
+
+function canvasPos(e) {
+  const b = prevCanvas.getBoundingClientRect();
+  return {
+    x: Math.min(1, Math.max(0, (e.clientX - b.left) / b.width)),
+    y: Math.min(1, Math.max(0, (e.clientY - b.top) / b.height)),
+  };
+}
+function rectFrom(a, b) {
+  return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y),
+           w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };
+}
+prevCanvas.addEventListener("pointerdown", e => {
+  dragStart = canvasPos(e); prevCanvas.setPointerCapture(e.pointerId);
+});
+prevCanvas.addEventListener("pointermove", e => {
+  if (!dragStart) return;
+  tempRect = rectFrom(dragStart, canvasPos(e)); drawPreview();
+});
+prevCanvas.addEventListener("pointerup", e => {
+  if (!dragStart) return;
+  const r = rectFrom(dragStart, canvasPos(e));
+  dragStart = null; tempRect = null;
+  if (r.w > 0.02 && r.h > 0.02) zones.push(r);
+  drawPreview();
+});
+$("clearZones").addEventListener("click", () => { zones = []; drawPreview(); });
+$("goBtn").addEventListener("click", () => {
+  if (pendingFile && !busy) runProcessing(pendingFile);
+});
+
+// スライドの切り替わりを検出して取り出す
+async function runProcessing(file) {
+  busy = true; cancelled = false;
+  $("preview").classList.add("hide");
+  gallery.innerHTML = ""; result.innerHTML = "";
+  barWrap.classList.remove("hide"); barFill.style.width = "0%";
+  cancelBtn.classList.remove("hide");
+  cancelBtn.disabled = false;
+  cancelBtn.textContent = "処理を中止する";
 
   const duration = video.duration;
   const threshold = 0.030 - Number(sens.value) * 0.0025; // 感度スライダー
   const sampleStep = 1.0;   // 何秒ごとに調べるか
   const minGap = 1.2;       // 採用する間隔の最小秒数
   const maxW = 1920;        // PDFの最大横幅
+  const mask = buildMask(zones); // 除外範囲を反映した判定マスク
 
-  // 切り出し用キャンバス
   const scale = video.videoWidth > maxW ? maxW / video.videoWidth : 1;
   const fw = Math.round(video.videoWidth * scale);
   const fh = Math.round(video.videoHeight * scale);
@@ -239,9 +357,9 @@ async function start(file) {
     await seekTo(Math.min(t, duration - 0.05));
     const sig = signature();
     if (lastSig === null) {
-      await capture(t);                       // 先頭スライド
-    } else if (diff(sig, lastSig) > threshold && (t - lastCapT) >= minGap) {
-      await capture(t);                       // 画面が変わった
+      await capture(t);                                  // 先頭スライド
+    } else if (diff(sig, lastSig, mask) > threshold && (t - lastCapT) >= minGap) {
+      await capture(t);                                  // 画面が変わった
     }
     lastSig = sig;
     const pct = Math.min(100, t / duration * 100);
@@ -255,7 +373,7 @@ async function start(file) {
     setStatus(cancelled
       ? "中止しました。"
       : "⚠ スライドを検出できませんでした。「調整」で『多め』に寄せて、もう一度お試しください。");
-    busy = false; URL.revokeObjectURL(url); return;
+    busy = false; return;
   }
 
   setStatus(`仕上げ中…（${slides.length}枚）`);
@@ -265,7 +383,6 @@ async function start(file) {
   const head = cancelled ? "中止しました。途中までで " : "完了しました。";
   setStatus(`${head}スライド ${slides.length}枚 を取り出しました。下のボタンから保存してください。`);
   busy = false;
-  URL.revokeObjectURL(url);
 }
 
 // PDFとZIPのダウンロードボタンを表示する
