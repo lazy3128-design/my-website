@@ -111,9 +111,6 @@
     </div>
     <div class="note">WebP は PNG よりファイルがかなり小さくなります（スライドの見た目はほぼ同じ）。</div>
     <div class="row">
-      <label class="chk"><input type="checkbox" id="doTranscribe"> 音声を文字起こしする（実験的）</label>
-    </div>
-    <div class="row">
       <span>文字起こし精度</span>
       <select id="whModel">
         <option value="Xenova/whisper-tiny">tiny（速い・粗い）</option>
@@ -121,7 +118,7 @@
         <option value="Xenova/whisper-small">small（高精度・遅い）</option>
       </select>
     </div>
-    <div class="note">文字起こしは、初回にAIモデル（数十〜数百MB）を読み込み、処理にも時間がかかります（その間ページが反応しにくくなります）。ネット接続が必要です。結果は「スライド番号ごとに発話を割り当てたテキスト」で出力されます。スライド画像の取り出しには影響しません。</div>
+    <div class="note">文字起こしは、各動画の結果に出る「文字起こし」ボタンで実行します（実験的）。初回はAIモデル（数十〜数百MB）の読み込み、処理にも時間がかかり、その間ページが反応しにくくなります。ネット接続が必要です。</div>
   </details>
 </div>
 
@@ -470,25 +467,36 @@ async function processOne(file, mask, idx, total) {
   head.textContent = `${tag}${file.name} — ${slides.length}枚${note}`;
   setStatus(`${tag}${file.name} — 仕上げ中…（${slides.length}枚）`);
   await showDownloads(slides, baseName, res, fmt);
+  addTranscribeButton(file, slides, baseName, res);
+}
 
-  // 文字起こし（実験的・オンのときだけ。失敗しても画像出力には影響しない）
-  if ($("doTranscribe").checked && !cancelled) {
+// 各動画の結果に「文字起こし」ボタンを付ける（実験的・押したときだけ実行）
+function addTranscribeButton(file, slides, baseName, res) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "btn ghost";
+  btn.textContent = "この動画を文字起こし（実験的）";
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    btn.textContent = "文字起こし中…（時間がかかります）";
     try {
-      setStatus(`${tag}${file.name} — 文字起こし中…（時間がかかり、ページが反応しにくくなります）`);
       const txt = await transcribeToSlides(file, slides);
       const txtA = document.createElement("a");
       txtA.href = URL.createObjectURL(new Blob([txt], { type: "text/plain;charset=utf-8" }));
       txtA.download = baseName + "_transcript.txt";
       txtA.className = "btn dl2";
       txtA.textContent = "文字起こし（スライド対応）をダウンロード";
-      res.appendChild(txtA);
+      btn.replaceWith(txtA);
     } catch (err) {
+      btn.disabled = false;
+      btn.textContent = "もう一度 文字起こしを試す";
       const n = document.createElement("div");
       n.className = "note";
       n.textContent = "⚠ 文字起こしに失敗しました: " + ((err && err.message) || err);
       res.appendChild(n);
     }
-  }
+  });
+  res.appendChild(btn);
 }
 
 // --- 文字起こし（実験的） ---
