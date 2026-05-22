@@ -354,7 +354,8 @@ async function runBatch(files) {
   cancelBtn.textContent = files.length > 1 ? "すべて中止" : "処理を中止する";
 
   const mask = buildMask(zones); // 除外範囲を反映した判定マスク（全動画共通）
-  for (let i = 0; i < files.length; i++) {
+  let i = 0;
+  for (; i < files.length; i++) {
     if (cancelled) break;
     try {
       await processOne(files[i], mask, i, files.length);
@@ -364,7 +365,8 @@ async function runBatch(files) {
   }
   cancelBtn.classList.add("hide");
   skipBtn.classList.add("hide");
-  setStatus((cancelled ? "中止しました。" : "すべて完了しました。") +
+  const stoppedEarly = i < files.length;
+  setStatus((stoppedEarly ? "中止しました（残りの動画は未処理です）。" : "すべて完了しました。") +
             "各動画のボタンから保存してください。");
   busy = false;
 }
