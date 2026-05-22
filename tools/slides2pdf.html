@@ -439,7 +439,7 @@ async function processOne(file, mask, num) {
       full.toBlob(r, "image/" + fmt, fmt === "webp" ? 0.92 : undefined));
     const bytes = new Uint8Array(await blob.arrayBuffer());
     slides.push({ bytes, w: fw, h: fh, t });
-    const name = `slide_${String(slides.length).padStart(3, "0")}.${fmt}`;
+    const name = `${baseName}_${String(slides.length).padStart(3, "0")}.${fmt}`;
     const img = document.createElement("img");
     img.src = URL.createObjectURL(blob);
     img.title = `${name}（クリックで拡大）`;
@@ -484,7 +484,7 @@ async function showDownloads(slides, baseName, resultEl, fmt) {
   resultEl.innerHTML = "";
 
   const zipA = document.createElement("a");
-  zipA.href = URL.createObjectURL(buildZIP(slides, fmt));
+  zipA.href = URL.createObjectURL(buildZIP(slides, fmt, baseName));
   zipA.download = baseName + "_slides.zip";
   zipA.className = "btn dl";
   zipA.textContent = `${fmt.toUpperCase()}画像をまとめてダウンロード（${slides.length}枚・001〜）`;
@@ -585,7 +585,7 @@ function crc32(buf) {
 }
 
 // 画像を詰めたZIPを手作りする（外部ライブラリ不要）
-function buildZIP(slides, fmt) {
+function buildZIP(slides, fmt, baseName) {
   const enc = s => new TextEncoder().encode(s);
   const u16 = n => new Uint8Array([n & 255, (n >> 8) & 255]);
   const u32 = n => new Uint8Array([n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >>> 24) & 255]);
@@ -595,7 +595,7 @@ function buildZIP(slides, fmt) {
 
   const central = [];
   slides.forEach((s, i) => {
-    const nameB = enc(`slide_${String(i + 1).padStart(3, "0")}.${fmt}`);
+    const nameB = enc(`${baseName}_${String(i + 1).padStart(3, "0")}.${fmt}`);
     const crc = crc32(s.bytes);
     const offset = len;
     push(u32(0x04034b50));
