@@ -38,7 +38,10 @@
   .gallery { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
   .gallery img { width: 120px; border: 1px solid #d0d7de; border-radius: 4px; cursor: pointer; }
   .gallery img:hover { border-color: #4c8dff; }
-  #result { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 18px; }
+  #result, .result { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+  .vid-block { margin-top: 26px; padding-top: 18px; border-top: 1px solid #e3e6ea; }
+  .vid-block:first-child { border-top: none; padding-top: 0; }
+  .vid-block h3 { font-size: 15px; margin: 0; word-break: break-all; }
   .lb { position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 100;
         display: flex; align-items: center; justify-content: center; }
   .lb-inner { display: flex; flex-direction: column; align-items: center; gap: 14px;
@@ -68,10 +71,10 @@
   <p class="lead">動画の中でスライドが切り替わった場面を1枚ずつPNG画像にして取り出します。1つのPDFにまとめることもできます。インストール不要・ブラウザだけで動きます。</p>
 
   <div id="drop">
-    <div class="big">ここに mp4 動画をドラッグ＆ドロップ</div>
-    <div class="sub">または下のボタンから選んでください</div>
+    <div class="big">ここに動画をドラッグ＆ドロップ</div>
+    <div class="sub">複数まとめてドロップできます／または下のボタンから選択</div>
     <button class="btn" id="pick" type="button">動画ファイルを選ぶ</button>
-    <input type="file" id="file" accept="video/mp4,video/*" class="hide">
+    <input type="file" id="file" accept="video/mp4,video/*" multiple class="hide">
   </div>
 
   <div id="preview" class="hide">
@@ -87,8 +90,7 @@
   <div id="status"></div>
   <div class="bar hide" id="barWrap"><div id="barFill"></div></div>
   <button class="btn cancel hide" id="cancel" type="button">処理を中止する</button>
-  <div class="gallery" id="gallery"></div>
-  <div id="result"></div>
+  <div id="outputs"></div>
 
   <details>
     <summary>うまく取れないときの調整</summary>
@@ -118,8 +120,7 @@
 const $ = id => document.getElementById(id);
 const drop = $("drop"), fileInput = $("file"), video = $("video");
 const statusEl = $("status"), barWrap = $("barWrap"), barFill = $("barFill");
-const gallery = $("gallery"), result = $("result"), sens = $("sens");
-const cancelBtn = $("cancel");
+const sens = $("sens"), cancelBtn = $("cancel");
 
 let busy = false, cancelled = false;
 
@@ -146,7 +147,7 @@ document.addEventListener("keydown", e => {
 
 $("pick").addEventListener("click", e => { e.stopPropagation(); fileInput.click(); });
 drop.addEventListener("click", () => { if (!busy) fileInput.click(); });
-fileInput.addEventListener("change", () => { if (fileInput.files[0]) start(fileInput.files[0]); });
+fileInput.addEventListener("change", () => { if (fileInput.files.length) start([...fileInput.files]); });
 
 ["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e => {
   e.preventDefault(); if (!busy) drop.classList.add("over");
@@ -157,8 +158,8 @@ fileInput.addEventListener("change", () => { if (fileInput.files[0]) start(fileI
 drop.addEventListener("drop", e => {
   e.preventDefault();
   if (busy) return;
-  const f = e.dataTransfer.files[0];
-  if (f) start(f);
+  const fs = [...e.dataTransfer.files];
+  if (fs.length) start(fs);
 });
 
 function setStatus(msg) { statusEl.textContent = msg; }
@@ -218,40 +219,44 @@ function buildMask(zones) {
 
 // --- 状態 ---
 let currentURL = null, zones = [], prevBase = null;
-let dragStart = null, tempRect = null, pendingFile = null;
-const prevCanvas = $("prevCanvas");
+let dragStart = null, tempRect = null, pendingFiles = null;
+const prevCanvas = $("prevCanvas"), outputs = $("outputs");
 
 function resetUI() {
-  gallery.innerHTML = ""; result.innerHTML = "";
+  outputs.innerHTML = "";
   $("preview").classList.add("hide");
   barWrap.classList.add("hide"); barFill.style.width = "0%";
   cancelBtn.classList.add("hide");
 }
 
-// 動画を読み込み、プレビュー（除外範囲の指定）へ進む
-async function start(file) {
+// 動画(複数可)を読み込み、1本目でプレビュー（除外範囲の指定）へ進む
+async function start(files) {
+  files = files.filter(f => !f.type || f.type.startsWith("video"));
+  if (!files.length) { setStatus("⚠ 動画ファイルが見つかりませんでした。"); return; }
   busy = true; cancelled = false;
   resetUI();
   zones = [];
-  setStatus("動画を読み込んでいます…");
+  setStatus(files.length > 1
+    ? `${files.length}本の動画を読み込んでいます…`
+    : "動画を読み込んでいます…");
 
   if (currentURL) URL.revokeObjectURL(currentURL);
-  currentURL = URL.createObjectURL(file);
+  currentURL = URL.createObjectURL(files[0]);
   video.src = currentURL;
   try {
     await new Promise((res, rej) => {
       video.onloadedmetadata = res;
-      video.onerror = () => rej(new Error("この動画ファイルは読み込めませんでした。"));
+      video.onerror = () => rej(new Error("最初の動画ファイルが読み込めませんでした。"));
     });
   } catch (err) {
     setStatus("⚠ " + err.message);
     busy = false; return;
   }
-  await showPreview(file);
+  await showPreview(files);
 }
 
 // 代表コマを表示して除外範囲の指定を受け付ける
-async function showPreview(file) {
+async function showPreview(files) {
   await seekTo(Math.min(video.duration * 0.3, Math.max(0, video.duration - 0.1)));
   const pw = Math.min(video.videoWidth, 640);
   const ph = Math.round(pw * video.videoHeight / video.videoWidth);
@@ -261,8 +266,10 @@ async function showPreview(file) {
   prevBase.getContext("2d").drawImage(video, 0, 0, pw, ph);
   drawPreview();
   $("preview").classList.remove("hide");
-  setStatus("テロップやカメラ映像を囲んだら「解析を開始」を押してください。");
-  pendingFile = file;
+  setStatus(files.length > 1
+    ? `${files.length}本の動画を処理します。囲んだ除外範囲は全動画に共通で適用されます。`
+    : "テロップやカメラ映像を囲んだら「解析を開始」を押してください。");
+  pendingFiles = files;
   busy = false; // プレビュー中は別の動画も受け付ける
 }
 
@@ -306,25 +313,67 @@ prevCanvas.addEventListener("pointerup", e => {
 });
 $("clearZones").addEventListener("click", () => { zones = []; drawPreview(); });
 $("goBtn").addEventListener("click", () => {
-  if (pendingFile && !busy) runProcessing(pendingFile);
+  if (pendingFiles && !busy) runBatch(pendingFiles);
 });
 
-// スライドの切り替わりを検出して取り出す
-async function runProcessing(file) {
+// 複数動画を順番に処理する
+async function runBatch(files) {
   busy = true; cancelled = false;
   $("preview").classList.add("hide");
-  gallery.innerHTML = ""; result.innerHTML = "";
-  barWrap.classList.remove("hide"); barFill.style.width = "0%";
+  outputs.innerHTML = "";
+  barWrap.classList.remove("hide");
   cancelBtn.classList.remove("hide");
   cancelBtn.disabled = false;
   cancelBtn.textContent = "処理を中止する";
+
+  const mask = buildMask(zones); // 除外範囲を反映した判定マスク（全動画共通）
+  for (let i = 0; i < files.length; i++) {
+    if (cancelled) break;
+    await processOne(files[i], mask, i, files.length);
+  }
+  cancelBtn.classList.add("hide");
+  setStatus((cancelled ? "中止しました。" : "すべて完了しました。") +
+            "各動画のボタンから保存してください。");
+  busy = false;
+}
+
+// 動画1本を処理し、専用の出力ブロックを作る
+async function processOne(file, mask, idx, total) {
+  const tag = total > 1 ? `(${idx + 1}/${total}) ` : "";
+  const baseName = file.name.replace(/\.[^.]+$/, "");
+
+  const block = document.createElement("div");
+  block.className = "vid-block";
+  const head = document.createElement("h3");
+  head.textContent = tag + file.name;
+  const gal = document.createElement("div");
+  gal.className = "gallery";
+  const res = document.createElement("div");
+  res.className = "result";
+  block.append(head, gal, res);
+  outputs.appendChild(block);
+
+  // 2本目以降は動画を読み込み直す（1本目はプレビューで読み込み済み）
+  if (idx > 0) {
+    if (currentURL) URL.revokeObjectURL(currentURL);
+    currentURL = URL.createObjectURL(file);
+    video.src = currentURL;
+    try {
+      await new Promise((ok, ng) => {
+        video.onloadedmetadata = ok;
+        video.onerror = () => ng(new Error("読み込めませんでした"));
+      });
+    } catch (err) {
+      head.textContent = `${tag}${file.name} — ⚠ ${err.message}`;
+      return;
+    }
+  }
 
   const duration = video.duration;
   const threshold = 0.030 - Number(sens.value) * 0.0025; // 感度スライダー
   const sampleStep = 1.0;   // 何秒ごとに調べるか
   const minGap = 1.2;       // 採用する間隔の最小秒数
-  const maxW = 1920;        // PDFの最大横幅
-  const mask = buildMask(zones); // 除外範囲を反映した判定マスク
+  const maxW = 1920;        // 出力画像の最大横幅
 
   const scale = video.videoWidth > maxW ? maxW / video.videoWidth : 1;
   const fw = Math.round(video.videoWidth * scale);
@@ -341,17 +390,16 @@ async function runProcessing(file) {
     const blob = await new Promise(r => full.toBlob(r, "image/png"));
     const bytes = new Uint8Array(await blob.arrayBuffer());
     slides.push({ bytes, w: fw, h: fh });
-    const n = slides.length;
-    const name = `slide_${String(n).padStart(3, "0")}.png`;
+    const name = `slide_${String(slides.length).padStart(3, "0")}.png`;
     const img = document.createElement("img");
     img.src = URL.createObjectURL(blob);
     img.title = `${name}（クリックで拡大）`;
     img.addEventListener("click", () => openLightbox(img.src, name));
-    gallery.appendChild(img);
+    gal.appendChild(img);
     lastCapT = t;
   }
 
-  setStatus("スライドの切り替わりを探しています…");
+  barFill.style.width = "0%";
   for (let t = 0; t < duration; t += sampleStep) {
     if (cancelled) break;
     await seekTo(Math.min(t, duration - 0.05));
@@ -364,37 +412,30 @@ async function runProcessing(file) {
     lastSig = sig;
     const pct = Math.min(100, t / duration * 100);
     barFill.style.width = pct + "%";
-    setStatus(`スライドの切り替わりを探しています… ${Math.round(pct)}％（${slides.length}枚 検出）`);
+    setStatus(`${tag}${file.name} — スライドを探しています… ${Math.round(pct)}％（${slides.length}枚）`);
   }
   if (!cancelled) barFill.style.width = "100%";
-  cancelBtn.classList.add("hide");
 
   if (!slides.length) {
-    setStatus(cancelled
-      ? "中止しました。"
-      : "⚠ スライドを検出できませんでした。「調整」で『多め』に寄せて、もう一度お試しください。");
-    busy = false; return;
+    head.textContent = `${tag}${file.name} — ` +
+      (cancelled ? "中止しました" : "⚠ スライドを検出できませんでした");
+    return;
   }
-
-  setStatus(`仕上げ中…（${slides.length}枚）`);
-  const baseName = file.name.replace(/\.[^.]+$/, "");
-  await showDownloads(slides, baseName);
-
-  const head = cancelled ? "中止しました。途中までで " : "完了しました。";
-  setStatus(`${head}スライド ${slides.length}枚 を取り出しました。下のボタンから保存してください。`);
-  busy = false;
+  head.textContent = `${tag}${file.name} — ${slides.length}枚`;
+  setStatus(`${tag}${file.name} — 仕上げ中…（${slides.length}枚）`);
+  await showDownloads(slides, baseName, res);
 }
 
-// 出力ボタン（PNG一括ZIP と PDF）を表示する
-async function showDownloads(slides, baseName) {
-  result.innerHTML = "";
+// 出力ボタン（PNG一括ZIP と PDF）を resultEl に表示する
+async function showDownloads(slides, baseName, resultEl) {
+  resultEl.innerHTML = "";
 
   const zipA = document.createElement("a");
   zipA.href = URL.createObjectURL(buildZIP(slides));
   zipA.download = baseName + "_slides.zip";
   zipA.className = "btn dl";
   zipA.textContent = `PNG画像をまとめてダウンロード（${slides.length}枚・001〜）`;
-  result.appendChild(zipA);
+  resultEl.appendChild(zipA);
 
   // PDFはPNGをJPEGに変換して埋め込む
   const jpegs = [];
@@ -406,7 +447,7 @@ async function showDownloads(slides, baseName) {
   pdfA.download = baseName + "_slides.pdf";
   pdfA.className = "btn dl2";
   pdfA.textContent = `PDFにまとめてダウンロード（${slides.length}ページ）`;
-  result.appendChild(pdfA);
+  resultEl.appendChild(pdfA);
 }
 
 // PNGバイト列をJPEGバイト列に変換する（PDF埋め込み用）
