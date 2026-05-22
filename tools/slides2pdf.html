@@ -62,7 +62,6 @@
   .row { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
   .row input[type=range] { flex: 1; }
   .note { font-size: 12px; color: #8a929c; margin-top: 4px; }
-  .chk { display: flex; align-items: center; gap: 6px; cursor: pointer; }
   .hide { display: none; }
 </style>
 </head>
@@ -110,15 +109,6 @@
       </select>
     </div>
     <div class="note">WebP は PNG よりファイルがかなり小さくなります（スライドの見た目はほぼ同じ）。</div>
-    <div class="row">
-      <span>文字起こし精度</span>
-      <select id="whModel">
-        <option value="Xenova/whisper-tiny">tiny（速い・粗い）</option>
-        <option value="Xenova/whisper-base" selected>base（標準）</option>
-        <option value="Xenova/whisper-small">small（高精度・遅い）</option>
-      </select>
-    </div>
-    <div class="note">文字起こしは、各動画の結果に出る「文字起こし」ボタンで実行します（実験的）。初回はAIモデル（数十〜数百MB）の読み込み、処理にも時間がかかり、その間ページが反応しにくくなります。ネット接続が必要です。</div>
   </details>
 </div>
 
@@ -467,86 +457,6 @@ async function processOne(file, mask, idx, total) {
   head.textContent = `${tag}${file.name} — ${slides.length}枚${note}`;
   setStatus(`${tag}${file.name} — 仕上げ中…（${slides.length}枚）`);
   await showDownloads(slides, baseName, res, fmt);
-  addTranscribeButton(file, slides, baseName, res);
-}
-
-// 各動画の結果に「文字起こし」ボタンを付ける（実験的・押したときだけ実行）
-function addTranscribeButton(file, slides, baseName, res) {
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "btn ghost";
-  btn.textContent = "この動画を文字起こし（実験的）";
-  btn.addEventListener("click", async () => {
-    btn.disabled = true;
-    btn.textContent = "文字起こし中…（時間がかかります）";
-    try {
-      const txt = await transcribeToSlides(file, slides);
-      const txtA = document.createElement("a");
-      txtA.href = URL.createObjectURL(new Blob([txt], { type: "text/plain;charset=utf-8" }));
-      txtA.download = baseName + "_transcript.txt";
-      txtA.className = "btn dl2";
-      txtA.textContent = "文字起こし（スライド対応）をダウンロード";
-      btn.replaceWith(txtA);
-    } catch (err) {
-      btn.disabled = false;
-      btn.textContent = "もう一度 文字起こしを試す";
-      const n = document.createElement("div");
-      n.className = "note";
-      n.textContent = "⚠ 文字起こしに失敗しました: " + ((err && err.message) || err);
-      res.appendChild(n);
-    }
-  });
-  res.appendChild(btn);
-}
-
-// --- 文字起こし（実験的） ---
-let _whisperPipe = null, _whisperModel = null;
-
-// 音声を文字起こしし、スライド番号ごとに割り当てたテキストを返す
-async function transcribeToSlides(file, slides) {
-  const audio = await extractAudio16k(file);
-  const modelId = $("whModel").value;
-  if (_whisperPipe == null || _whisperModel !== modelId) {
-    const { pipeline } = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3");
-    _whisperPipe = await pipeline("automatic-speech-recognition", modelId);
-    _whisperModel = modelId;
-  }
-  const out = await _whisperPipe(audio, {
-    language: "japanese", task: "transcribe",
-    chunk_length_s: 30, stride_length_s: 5,
-    return_timestamps: true,
-  });
-  return alignTranscript(out.chunks || [], slides);
-}
-
-// 動画から16kHzモノラルの音声サンプルを取り出す
-async function extractAudio16k(file) {
-  const buf = await file.arrayBuffer();
-  const ctx = new OfflineAudioContext(1, 16000, 16000);
-  const decoded = await ctx.decodeAudioData(buf);
-  return decoded.getChannelData(0);
-}
-
-// 文字起こしの各区間を、その時刻に表示されていたスライドへ割り当てる
-function alignTranscript(chunks, slides) {
-  const tm = s => {
-    const m = Math.floor(s / 60), ss = Math.floor(s % 60);
-    return `${m}:${String(ss).padStart(2, "0")}`;
-  };
-  const lines = [];
-  for (let i = 0; i < slides.length; i++) {
-    const start = slides[i].t;
-    const end = (i + 1 < slides.length) ? slides[i + 1].t : Infinity;
-    const text = chunks
-      .filter(c => Array.isArray(c.timestamp) && c.timestamp[0] != null
-                   && c.timestamp[0] >= start && c.timestamp[0] < end)
-      .map(c => (c.text || "").trim())
-      .join("");
-    lines.push(`■ スライド${String(i + 1).padStart(3, "0")}  （${tm(start)}〜）`);
-    lines.push(text || "（この区間の発話は検出されませんでした）");
-    lines.push("");
-  }
-  return lines.join("\n");
 }
 
 // 出力ボタン（画像一括ZIP と PDF）を resultEl に表示する
