@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>mp4スライド → PDF 変換</title>
+<title>mp4スライド → PNG変換</title>
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
@@ -64,8 +64,8 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>mp4スライド → PDF 変換</h1>
-  <p class="lead">動画の中でスライドが切り替わった場面を1枚ずつ集めて、1つのPDFにします。インストール不要・ブラウザだけで動きます。</p>
+  <h1>mp4スライド → PNG変換</h1>
+  <p class="lead">動画の中でスライドが切り替わった場面を1枚ずつPNG画像にして取り出します。1つのPDFにまとめることもできます。インストール不要・ブラウザだけで動きます。</p>
 
   <div id="drop">
     <div class="big">ここに mp4 動画をドラッグ＆ドロップ</div>
@@ -338,11 +338,11 @@ async function runProcessing(file) {
 
   async function capture(t) {
     fctx.drawImage(video, 0, 0, fw, fh);
-    const blob = await new Promise(r => full.toBlob(r, "image/jpeg", 0.9));
+    const blob = await new Promise(r => full.toBlob(r, "image/png"));
     const bytes = new Uint8Array(await blob.arrayBuffer());
     slides.push({ bytes, w: fw, h: fh });
     const n = slides.length;
-    const name = `slide_${String(n).padStart(3, "0")}.jpg`;
+    const name = `slide_${String(n).padStart(3, "0")}.png`;
     const img = document.createElement("img");
     img.src = URL.createObjectURL(blob);
     img.title = `${name}（クリックで拡大）`;
@@ -378,30 +378,45 @@ async function runProcessing(file) {
 
   setStatus(`仕上げ中…（${slides.length}枚）`);
   const baseName = file.name.replace(/\.[^.]+$/, "");
-  showDownloads(slides, baseName);
+  await showDownloads(slides, baseName);
 
   const head = cancelled ? "中止しました。途中までで " : "完了しました。";
   setStatus(`${head}スライド ${slides.length}枚 を取り出しました。下のボタンから保存してください。`);
   busy = false;
 }
 
-// PDFとZIPのダウンロードボタンを表示する
-function showDownloads(slides, baseName) {
+// 出力ボタン（PNG一括ZIP と PDF）を表示する
+async function showDownloads(slides, baseName) {
   result.innerHTML = "";
-
-  const pdfA = document.createElement("a");
-  pdfA.href = URL.createObjectURL(buildPDF(slides));
-  pdfA.download = baseName + "_slides.pdf";
-  pdfA.className = "btn dl";
-  pdfA.textContent = `PDFをダウンロード（${slides.length}ページ）`;
-  result.appendChild(pdfA);
 
   const zipA = document.createElement("a");
   zipA.href = URL.createObjectURL(buildZIP(slides));
   zipA.download = baseName + "_slides.zip";
-  zipA.className = "btn dl2";
-  zipA.textContent = `画像をまとめてダウンロード（${slides.length}枚・001〜）`;
+  zipA.className = "btn dl";
+  zipA.textContent = `PNG画像をまとめてダウンロード（${slides.length}枚・001〜）`;
   result.appendChild(zipA);
+
+  // PDFはPNGをJPEGに変換して埋め込む
+  const jpegs = [];
+  for (const s of slides) {
+    jpegs.push({ bytes: await pngToJpeg(s.bytes, s.w, s.h), w: s.w, h: s.h });
+  }
+  const pdfA = document.createElement("a");
+  pdfA.href = URL.createObjectURL(buildPDF(jpegs));
+  pdfA.download = baseName + "_slides.pdf";
+  pdfA.className = "btn dl2";
+  pdfA.textContent = `PDFにまとめてダウンロード（${slides.length}ページ）`;
+  result.appendChild(pdfA);
+}
+
+// PNGバイト列をJPEGバイト列に変換する（PDF埋め込み用）
+async function pngToJpeg(pngBytes, w, h) {
+  const bmp = await createImageBitmap(new Blob([pngBytes], { type: "image/png" }));
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  c.getContext("2d").drawImage(bmp, 0, 0);
+  const blob = await new Promise(r => c.toBlob(r, "image/jpeg", 0.9));
+  return new Uint8Array(await blob.arrayBuffer());
 }
 
 // JPEG画像を埋め込んだPDFを手作りする（外部ライブラリ不要）
@@ -475,7 +490,7 @@ function crc32(buf) {
   return (crc ^ 0xFFFFFFFF) >>> 0;
 }
 
-// JPEG画像を無圧縮で詰めたZIPを手作りする（外部ライブラリ不要）
+// PNG画像を詰めたZIPを手作りする（外部ライブラリ不要）
 function buildZIP(slides) {
   const enc = s => new TextEncoder().encode(s);
   const u16 = n => new Uint8Array([n & 255, (n >> 8) & 255]);
@@ -486,7 +501,7 @@ function buildZIP(slides) {
 
   const central = [];
   slides.forEach((s, i) => {
-    const nameB = enc(`slide_${String(i + 1).padStart(3, "0")}.jpg`);
+    const nameB = enc(`slide_${String(i + 1).padStart(3, "0")}.png`);
     const crc = crc32(s.bytes);
     const offset = len;
     push(u32(0x04034b50));
