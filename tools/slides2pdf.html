@@ -101,6 +101,14 @@
       <span>多め</span>
     </div>
     <div class="note">スライドが取りこぼされるときは「多め」に、関係ない画面まで増えすぎるときは「少なめ」に動かして、もう一度ドロップしてください。</div>
+    <div class="row">
+      <span>画像の形式</span>
+      <select id="fmt">
+        <option value="png">PNG（高画質・ファイル大）</option>
+        <option value="webp">WebP（軽量）</option>
+      </select>
+    </div>
+    <div class="note">WebP は PNG よりファイルがかなり小さくなります（スライドの見た目はほぼ同じ）。</div>
   </details>
 </div>
 
@@ -121,7 +129,7 @@
 const $ = id => document.getElementById(id);
 const drop = $("drop"), fileInput = $("file"), video = $("video");
 const statusEl = $("status"), barWrap = $("barWrap"), barFill = $("barFill");
-const sens = $("sens"), cancelBtn = $("cancel"), skipBtn = $("skip");
+const sens = $("sens"), cancelBtn = $("cancel"), skipBtn = $("skip"), fmtSel = $("fmt");
 
 let busy = false, cancelled = false, skipRequested = false;
 
@@ -392,6 +400,7 @@ async function processOne(file, mask, idx, total) {
   const sampleStep = 1.0;   // 何秒ごとに調べるか
   const minGap = 1.2;       // 採用する間隔の最小秒数
   const maxW = 1920;        // 出力画像の最大横幅
+  const fmt = fmtSel.value; // 出力画像の形式（png / webp）
 
   const scale = video.videoWidth > maxW ? maxW / video.videoWidth : 1;
   const fw = Math.round(video.videoWidth * scale);
@@ -405,10 +414,11 @@ async function processOne(file, mask, idx, total) {
 
   async function capture(t) {
     fctx.drawImage(video, 0, 0, fw, fh);
-    const blob = await new Promise(r => full.toBlob(r, "image/png"));
+    const blob = await new Promise(r =>
+      full.toBlob(r, "image/" + fmt, fmt === "webp" ? 0.92 : undefined));
     const bytes = new Uint8Array(await blob.arrayBuffer());
-    slides.push({ bytes, w: fw, h: fh });
-    const name = `slide_${String(slides.length).padStart(3, "0")}.png`;
+    slides.push({ bytes, w: fw, h: fh, t });
+    const name = `slide_${String(slides.length).padStart(3, "0")}.${fmt}`;
     const img = document.createElement("img");
     img.src = URL.createObjectURL(blob);
     img.title = `${name}（クリックで拡大）`;
@@ -444,24 +454,24 @@ async function processOne(file, mask, idx, total) {
   const note = skipRequested ? "（スキップ・途中まで）" : "";
   head.textContent = `${tag}${file.name} — ${slides.length}枚${note}`;
   setStatus(`${tag}${file.name} — 仕上げ中…（${slides.length}枚）`);
-  await showDownloads(slides, baseName, res);
+  await showDownloads(slides, baseName, res, fmt);
 }
 
-// 出力ボタン（PNG一括ZIP と PDF）を resultEl に表示する
-async function showDownloads(slides, baseName, resultEl) {
+// 出力ボタン（画像一括ZIP と PDF）を resultEl に表示する
+async function showDownloads(slides, baseName, resultEl, fmt) {
   resultEl.innerHTML = "";
 
   const zipA = document.createElement("a");
-  zipA.href = URL.createObjectURL(buildZIP(slides));
+  zipA.href = URL.createObjectURL(buildZIP(slides, fmt));
   zipA.download = baseName + "_slides.zip";
   zipA.className = "btn dl";
-  zipA.textContent = `PNG画像をまとめてダウンロード（${slides.length}枚・001〜）`;
+  zipA.textContent = `${fmt.toUpperCase()}画像をまとめてダウンロード（${slides.length}枚・001〜）`;
   resultEl.appendChild(zipA);
 
-  // PDFはPNGをJPEGに変換して埋め込む
+  // PDFは画像をJPEGに変換して埋め込む
   const jpegs = [];
   for (const s of slides) {
-    jpegs.push({ bytes: await pngToJpeg(s.bytes, s.w, s.h), w: s.w, h: s.h });
+    jpegs.push({ bytes: await imgToJpeg(s.bytes, s.w, s.h, fmt), w: s.w, h: s.h });
   }
   const pdfA = document.createElement("a");
   pdfA.href = URL.createObjectURL(buildPDF(jpegs));
@@ -471,9 +481,9 @@ async function showDownloads(slides, baseName, resultEl) {
   resultEl.appendChild(pdfA);
 }
 
-// PNGバイト列をJPEGバイト列に変換する（PDF埋め込み用）
-async function pngToJpeg(pngBytes, w, h) {
-  const bmp = await createImageBitmap(new Blob([pngBytes], { type: "image/png" }));
+// 画像バイト列をJPEGバイト列に変換する（PDF埋め込み用）
+async function imgToJpeg(bytes, w, h, fmt) {
+  const bmp = await createImageBitmap(new Blob([bytes], { type: "image/" + fmt }));
   const c = document.createElement("canvas");
   c.width = w; c.height = h;
   c.getContext("2d").drawImage(bmp, 0, 0);
@@ -552,8 +562,8 @@ function crc32(buf) {
   return (crc ^ 0xFFFFFFFF) >>> 0;
 }
 
-// PNG画像を詰めたZIPを手作りする（外部ライブラリ不要）
-function buildZIP(slides) {
+// 画像を詰めたZIPを手作りする（外部ライブラリ不要）
+function buildZIP(slides, fmt) {
   const enc = s => new TextEncoder().encode(s);
   const u16 = n => new Uint8Array([n & 255, (n >> 8) & 255]);
   const u32 = n => new Uint8Array([n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >>> 24) & 255]);
@@ -563,7 +573,7 @@ function buildZIP(slides) {
 
   const central = [];
   slides.forEach((s, i) => {
-    const nameB = enc(`slide_${String(i + 1).padStart(3, "0")}.png`);
+    const nameB = enc(`slide_${String(i + 1).padStart(3, "0")}.${fmt}`);
     const crc = crc32(s.bytes);
     const offset = len;
     push(u32(0x04034b50));
