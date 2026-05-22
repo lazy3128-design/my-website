@@ -90,6 +90,7 @@
   <div id="status"></div>
   <div class="bar hide" id="barWrap"><div id="barFill"></div></div>
   <button class="btn cancel hide" id="cancel" type="button">処理を中止する</button>
+  <button class="btn ghost hide" id="skip" type="button">この動画をスキップ ▶</button>
   <div id="outputs"></div>
 
   <details>
@@ -120,14 +121,19 @@
 const $ = id => document.getElementById(id);
 const drop = $("drop"), fileInput = $("file"), video = $("video");
 const statusEl = $("status"), barWrap = $("barWrap"), barFill = $("barFill");
-const sens = $("sens"), cancelBtn = $("cancel");
+const sens = $("sens"), cancelBtn = $("cancel"), skipBtn = $("skip");
 
-let busy = false, cancelled = false;
+let busy = false, cancelled = false, skipRequested = false;
 
 cancelBtn.addEventListener("click", () => {
   cancelled = true;
   cancelBtn.disabled = true;
   cancelBtn.textContent = "中止しています…";
+});
+skipBtn.addEventListener("click", () => {
+  skipRequested = true;
+  skipBtn.disabled = true;
+  skipBtn.textContent = "スキップ中…";
 });
 
 // 拡大表示（ライトボックス）
@@ -324,14 +330,19 @@ async function runBatch(files) {
   barWrap.classList.remove("hide");
   cancelBtn.classList.remove("hide");
   cancelBtn.disabled = false;
-  cancelBtn.textContent = "処理を中止する";
+  cancelBtn.textContent = files.length > 1 ? "すべて中止" : "処理を中止する";
 
   const mask = buildMask(zones); // 除外範囲を反映した判定マスク（全動画共通）
   for (let i = 0; i < files.length; i++) {
     if (cancelled) break;
-    await processOne(files[i], mask, i, files.length);
+    try {
+      await processOne(files[i], mask, i, files.length);
+    } catch (err) {
+      setStatus(`⚠ ${files[i].name} の処理でエラーが出ました。次の動画へ進みます。`);
+    }
   }
   cancelBtn.classList.add("hide");
+  skipBtn.classList.add("hide");
   setStatus((cancelled ? "中止しました。" : "すべて完了しました。") +
             "各動画のボタンから保存してください。");
   busy = false;
@@ -352,6 +363,13 @@ async function processOne(file, mask, idx, total) {
   res.className = "result";
   block.append(head, gal, res);
   outputs.appendChild(block);
+
+  skipRequested = false;
+  if (total > 1) {
+    skipBtn.classList.remove("hide");
+    skipBtn.disabled = false;
+    skipBtn.textContent = "この動画をスキップ ▶";
+  }
 
   // 2本目以降は動画を読み込み直す（1本目はプレビューで読み込み済み）
   if (idx > 0) {
@@ -401,7 +419,7 @@ async function processOne(file, mask, idx, total) {
 
   barFill.style.width = "0%";
   for (let t = 0; t < duration; t += sampleStep) {
-    if (cancelled) break;
+    if (cancelled || skipRequested) break;
     await seekTo(Math.min(t, duration - 0.05));
     const sig = signature();
     if (lastSig === null) {
@@ -414,14 +432,17 @@ async function processOne(file, mask, idx, total) {
     barFill.style.width = pct + "%";
     setStatus(`${tag}${file.name} — スライドを探しています… ${Math.round(pct)}％（${slides.length}枚）`);
   }
-  if (!cancelled) barFill.style.width = "100%";
+  if (!cancelled && !skipRequested) barFill.style.width = "100%";
 
   if (!slides.length) {
     head.textContent = `${tag}${file.name} — ` +
-      (cancelled ? "中止しました" : "⚠ スライドを検出できませんでした");
+      (cancelled ? "中止しました"
+       : skipRequested ? "スキップしました"
+       : "⚠ スライドを検出できませんでした");
     return;
   }
-  head.textContent = `${tag}${file.name} — ${slides.length}枚`;
+  const note = skipRequested ? "（スキップ・途中まで）" : "";
+  head.textContent = `${tag}${file.name} — ${slides.length}枚${note}`;
   setStatus(`${tag}${file.name} — 仕上げ中…（${slides.length}枚）`);
   await showDownloads(slides, baseName, res);
 }
