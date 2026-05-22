@@ -72,7 +72,7 @@
 
   <div id="drop">
     <div class="big">ここに動画をドラッグ＆ドロップ</div>
-    <div class="sub">複数まとめてドロップできます／または下のボタンから選択</div>
+    <div class="sub">複数OK・処理中でも追加でドロップできます／または下のボタンから選択</div>
     <button class="btn" id="pick" type="button">動画ファイルを選ぶ</button>
     <input type="file" id="file" accept="video/mp4,video/*" multiple class="hide">
   </div>
@@ -160,21 +160,33 @@ document.addEventListener("keydown", e => {
 });
 
 $("pick").addEventListener("click", e => { e.stopPropagation(); fileInput.click(); });
-drop.addEventListener("click", () => { if (!busy) fileInput.click(); });
-fileInput.addEventListener("change", () => { if (fileInput.files.length) start([...fileInput.files]); });
+drop.addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", () => { if (fileInput.files.length) intake([...fileInput.files]); });
 
 ["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e => {
-  e.preventDefault(); if (!busy) drop.classList.add("over");
+  e.preventDefault(); drop.classList.add("over");
 }));
 ["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => {
   e.preventDefault(); drop.classList.remove("over");
 }));
 drop.addEventListener("drop", e => {
   e.preventDefault();
-  if (busy) return;
   const fs = [...e.dataTransfer.files];
-  if (fs.length) start(fs);
+  if (fs.length) intake(fs);
 });
+
+// ドロップ／選択された動画を受け取る。準備済みなら順番待ちへ、未準備なら除外範囲の指定へ
+function intake(files) {
+  files = files.filter(f => !f.type || f.type.startsWith("video"));
+  if (!files.length) { setStatus("⚠ 動画ファイルが見つかりませんでした。"); return; }
+  if (!zonesReady) {
+    if (!busy) start(files);
+  } else {
+    queue.push(...files);
+    if (draining) setStatus(`動画 ${files.length}本 を順番待ちに追加しました。`);
+    else drainQueue();
+  }
+}
 
 function setStatus(msg) { statusEl.textContent = msg; }
 
@@ -232,8 +244,9 @@ function buildMask(zones) {
 }
 
 // --- 状態 ---
-let currentURL = null, zones = [], prevBase = null;
+let currentURL = null, zones = [], prevBase = null, loadedFile = null;
 let dragStart = null, tempRect = null, pendingFiles = null;
+let queue = [], draining = false, zonesReady = false, videoNum = 0;
 const prevCanvas = $("prevCanvas"), outputs = $("outputs");
 
 function resetUI() {
@@ -249,7 +262,7 @@ async function start(files) {
   if (!files.length) { setStatus("⚠ 動画ファイルが見つかりませんでした。"); return; }
   busy = true; cancelled = false;
   resetUI();
-  zones = [];
+  zones = []; queue = []; videoNum = 0; loadedFile = null;
   setStatus(files.length > 1
     ? `${files.length}本の動画を読み込んでいます…`
     : "動画を読み込んでいます…");
@@ -266,6 +279,7 @@ async function start(files) {
     setStatus("⚠ " + err.message);
     busy = false; return;
   }
+  loadedFile = files[0];
   await showPreview(files);
 }
 
@@ -327,40 +341,47 @@ prevCanvas.addEventListener("pointerup", e => {
 });
 $("clearZones").addEventListener("click", () => { zones = []; drawPreview(); });
 $("goBtn").addEventListener("click", () => {
-  if (pendingFiles && !busy) runBatch(pendingFiles);
+  if (!pendingFiles || draining) return;
+  zonesReady = true;
+  queue.push(...pendingFiles);
+  pendingFiles = null;
+  drainQueue();
 });
 
-// 複数動画を順番に処理する
-async function runBatch(files) {
-  busy = true; cancelled = false;
+// 順番待ちの動画を1本ずつ処理する。処理中に追加された動画も続けて処理する
+async function drainQueue() {
+  if (draining) return;
+  draining = true; busy = true; cancelled = false;
   $("preview").classList.add("hide");
-  outputs.innerHTML = "";
   barWrap.classList.remove("hide");
   cancelBtn.classList.remove("hide");
   cancelBtn.disabled = false;
-  cancelBtn.textContent = files.length > 1 ? "すべて中止" : "処理を中止する";
+  cancelBtn.textContent = "すべて中止";
+  skipBtn.classList.remove("hide");
 
   const mask = buildMask(zones); // 除外範囲を反映した判定マスク（全動画共通）
-  let i = 0;
-  for (; i < files.length; i++) {
-    if (cancelled) break;
+  let stoppedEarly = false;
+  while (queue.length) {
+    if (cancelled) { stoppedEarly = true; break; }
+    const file = queue.shift();
+    videoNum++;
     try {
-      await processOne(files[i], mask, i, files.length);
+      await processOne(file, mask, videoNum);
     } catch (err) {
-      setStatus(`⚠ ${files[i].name} の処理でエラーが出ました。次の動画へ進みます。`);
+      setStatus(`⚠ ${file.name} の処理でエラーが出ました。次の動画へ進みます。`);
     }
   }
+  if (cancelled) queue = [];
   cancelBtn.classList.add("hide");
   skipBtn.classList.add("hide");
-  const stoppedEarly = i < files.length;
-  setStatus((stoppedEarly ? "中止しました（残りの動画は未処理です）。" : "すべて完了しました。") +
-            "各動画のボタンから保存してください。");
-  busy = false;
+  draining = false; busy = false;
+  setStatus((stoppedEarly ? "中止しました（順番待ちはクリアしました）。" : "すべて完了しました。") +
+            "動画を追加でドロップすると、続けて処理できます。");
 }
 
 // 動画1本を処理し、専用の出力ブロックを作る
-async function processOne(file, mask, idx, total) {
-  const tag = total > 1 ? `(${idx + 1}/${total}) ` : "";
+async function processOne(file, mask, num) {
+  const tag = `(${num}本目) `;
   const baseName = file.name.replace(/\.[^.]+$/, "");
 
   const block = document.createElement("div");
@@ -375,14 +396,11 @@ async function processOne(file, mask, idx, total) {
   outputs.appendChild(block);
 
   skipRequested = false;
-  if (total > 1) {
-    skipBtn.classList.remove("hide");
-    skipBtn.disabled = false;
-    skipBtn.textContent = "この動画をスキップ ▶";
-  }
+  skipBtn.disabled = false;
+  skipBtn.textContent = "この動画をスキップ ▶";
 
-  // 2本目以降は動画を読み込み直す（1本目はプレビューで読み込み済み）
-  if (idx > 0) {
+  // この動画がまだ読み込まれていなければ読み込む
+  if (loadedFile !== file) {
     if (currentURL) URL.revokeObjectURL(currentURL);
     currentURL = URL.createObjectURL(file);
     video.src = currentURL;
@@ -391,6 +409,7 @@ async function processOne(file, mask, idx, total) {
         video.onloadedmetadata = ok;
         video.onerror = () => ng(new Error("読み込めませんでした"));
       });
+      loadedFile = file;
     } catch (err) {
       head.textContent = `${tag}${file.name} — ⚠ ${err.message}`;
       return;
@@ -442,7 +461,8 @@ async function processOne(file, mask, idx, total) {
     lastSig = sig;
     const pct = Math.min(100, t / duration * 100);
     barFill.style.width = pct + "%";
-    setStatus(`${tag}${file.name} — スライドを探しています… ${Math.round(pct)}％（${slides.length}枚）`);
+    setStatus(`${tag}${file.name} — スライドを探しています… ${Math.round(pct)}％（${slides.length}枚）`
+      + (queue.length ? `／待機 ${queue.length}本` : ""));
   }
   if (!cancelled && !skipRequested) barFill.style.width = "100%";
 
