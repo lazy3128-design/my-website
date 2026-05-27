@@ -4,7 +4,9 @@
       "WebFetch(domain:smithery.ai)",
       "WebSearch",
       "Bash(git clone:*)",
-      "Bash(git init:*)"
+      "Bash(git init:*)",
+      "Bash(cp \"/root/.claude/uploads/ee2c969a-95d5-4bc5-9760-87d326c95cad/ce4d7f51-UTAGE_VSL____.xlsx\" /tmp/utage_vsl.xlsx)",
+      "Bash(python3 -)"
     ]
   }
 }
