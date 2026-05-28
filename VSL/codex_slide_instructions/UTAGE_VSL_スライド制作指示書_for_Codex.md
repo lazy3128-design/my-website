@@ -410,3 +410,299 @@ slide_[番号]-[サブ番号].png    ※5拠点追加スライド（例：slide_
 
 **最終確認**：このドキュメントを参照しながら、Codexに対して各スライドを順次生成依頼してください。
 不明点があれば、各シーンの仕様を別資料『大賀VSL_スライド構造分析_v1.xlsx』⑤シーン全体図と照合して判断してください。
+
+---
+
+## 11. テンプレ関数化アプローチ（**重要・必読**）
+
+### なぜテンプレ関数化が必須か
+
+220枚を「220個の独立した生成タスク」として扱うと、**同じパターンのスライドが微妙にバラつく**事故が起きます：
+- 同じ「実績カード」なのに、ある時は左寄せ・ある時は中央寄せ
+- 強調色のアンバーが、ある時は `#D4A04C`・ある時は近似色になる
+- 装飾の濃淡が一定しない
+
+→ **対策：全220枚を5つのテンプレ関数（＋カード型のサブ関数）にデータを流し込むだけで生成する。**
+
+### 推奨ワークフロー
+
+| Step | 内容 |
+|---|---|
+| **1** | この章で定義する5パターン分のレンダリング関数（PIL/Pillow使用）を実装 |
+| **2** | 各関数で代表サンプルを1枚ずつ出力（計5枚） |
+| **3** | 人間がOK → 関数微調整があれば反映 |
+| **4** | 220枚分のデータをすべての関数に流して一括生成 |
+| **5** | 出力後、サムネ一覧でQA |
+
+**重要原則**：「絶対に1枚ずつ自由生成しない」「同じパターンのスライドは必ず同じ関数を経由する」
+
+### 関数シグネチャ定義（Codexはこれを実装すること）
+
+```python
+from PIL import Image, ImageDraw, ImageFont
+from pathlib import Path
+
+# 共通定数
+WIDTH, HEIGHT = 1920, 1080
+SAFE_MARGIN = 120
+WIPE_AREA = (1440, 0, 1920, 270)  # 右上 顔ワイプ予約エリア
+SUBTITLE_AREA_Y = 960  # 下120pxは字幕用
+FONT_PATH = "NotoSansJP-Bold.ttf"  # システムに合わせて差し替え
+
+# UTAGEブランドカラー
+BRAND_BLUE = "#58A3E6"
+BRAND_PURPLE = "#A75FF5"
+DEEP_BLUE = "#396995"
+DEEP_PURPLE = "#6C3D9F"
+WHITE_BG = "#FAFAF7"
+TEXT_DARK = "#1A1F36"
+TEXT_MID = "#5A6378"
+HIGHLIGHT_GOLD = "#D4A04C"
+SOFT_CORAL = "#C56B5A"
+
+# ============================================
+# パターン①：UTAGEブランドグラデーション
+# ============================================
+def render_pattern_1_gradient(
+    text_lines: list[str],
+    slide_id: str,
+    output_dir: str = "./slides",
+    emphasis_index: int = None,    # text_lines内の何番目を特大強調するか
+    emphasis_size_ratio: float = 1.8,  # 強調行のサイズ倍率
+) -> None:
+    """
+    用途：タイトル／主張・宣言／転換／CTA／個人ストーリー
+    背景：#58A3E6 → #A75FF5 の斜め45度グラデーション
+    テキスト：白、Noto Sans JP Bold、中央寄せ
+    """
+    # 1. 1920x1080キャンバス作成
+    # 2. 斜め45度グラデ背景描画（左下#58A3E6→右上#A75FF5）
+    # 3. 背景にうっすら幾何学ドットパターン（透明度8%）
+    # 4. text_linesを中央寄せで配置
+    #    - 基本サイズ：64pt
+    #    - emphasis_indexがある行は120pt
+    #    - 行間1.6
+    # 5. セーフゾーン（上下左右120px）と右上ワイプエリア（480x270）を回避
+    # 6. {output_dir}/slide_{slide_id}.pngで保存
+    pass
+
+
+# ============================================
+# パターン②：ディープパープル（痛み・反論）
+# ============================================
+def render_pattern_2_deep_purple(
+    text_lines: list[str],
+    slide_id: str,
+    output_dir: str = "./slides",
+    emphasis_index: int = None,
+    side_band: bool = True,  # 左上に#C56B5A縦帯（強調マーク）を入れるか
+) -> None:
+    """
+    用途：痛みの言語化／一網打尽宣言／反論先回り（赤の代替）
+    背景：#6C3D9F フルブリード（深い紫＝"重さ"で痛みを表現）
+    テキスト：白特大80-96pt、強調は#D3AFFA（Soft Purple）
+    """
+    pass
+
+
+# ============================================
+# パターン③：ホワイトフィギュア（4つのサブバリアント）
+# ============================================
+def render_pattern_3_message(
+    section_title: str,
+    text_lines: list[str],
+    slide_id: str,
+    output_dir: str = "./slides",
+) -> None:
+    """白＋メッセージ型（短い宣言・問いかけ）"""
+    pass
+
+
+def render_pattern_3_card(
+    business_role: str,           # 業種（小キャプション）
+    name: str,                    # 名前（中央大）
+    metrics: list[str],           # ビフォーアフター数字
+    quote: str = None,            # 引用クオート（あれば）
+    photo_path: str = None,       # 顔写真パス（あれば左に円形配置）
+    slide_id: str = "",
+    output_dir: str = "./slides",
+) -> None:
+    """
+    白＋実績カード型（顔写真＋業種＋数字＋クオート）
+    レイアウト：左に顔写真円形320×320、右に業種小／名前大／数字（数字は#D4A04Cで強調）
+    """
+    pass
+
+
+def render_pattern_3_list(
+    section_title: str,
+    items: list[str],             # 箇条書き項目（✅つき）
+    slide_id: str = "",
+    output_dir: str = "./slides",
+) -> None:
+    """白＋箇条書き型"""
+    pass
+
+
+def render_pattern_3_matrix(
+    section_title: str,
+    axis_labels: dict,            # {"x_pos": "売上", "y_pos": "工数"}
+    items: list[dict],            # [{"quadrant": "TR", "label": "..."}]
+    slide_id: str = "",
+    output_dir: str = "./slides",
+) -> None:
+    """白＋マトリクス型（2軸4象限）"""
+    pass
+
+
+# ============================================
+# パターン④：センチメンタル（理想未来・感情）
+# ============================================
+def render_pattern_4_sentimental(
+    text_lines: list[str],
+    background_concept: str,      # "morning_sky", "ocean", "road", "lavender_field"等
+    slide_id: str = "",
+    output_dir: str = "./slides",
+) -> None:
+    """
+    用途：理想未来の提示／感情モーメント／景色
+    背景：抽象的グラデ風景（UTAGE色寄せ）＋半透明オーバーレイ rgba(57,105,149,0.55)
+    テキスト：白72pt、中央寄せ
+    """
+    pass
+
+
+# ============================================
+# パターン⑤：ディープイマージョン（反論・心のつぶやき）
+# ============================================
+def render_pattern_5_dark(
+    text_lines: list[str],
+    is_quote: bool = True,        # 「」で囲うか
+    slide_id: str = "",
+    output_dir: str = "./slides",
+) -> None:
+    """
+    用途：反論先回り（会話風）／視聴者の心のつぶやき代弁
+    背景：#1A1F36 フルブリード＋紫青の微細な星雲テクスチャ
+    テキスト：白76pt、左寄せ or 中央寄せ
+    """
+    pass
+```
+
+### データ流し込み（一括生成）
+
+220枚分のデータをJSONまたはPythonリストで定義して関数を呼び出すだけ：
+
+```python
+slides_data = [
+    # スライド001
+    {
+        "id": "001",
+        "pattern": "p4_sentimental",
+        "params": {
+            "text_lines": [
+                "集客は伸びている",
+                "受講生やクライアントからの",
+                "問い合わせも止まらず入ってくる",
+                "",
+                "お客様からは『ありがとうございました』と",
+                "心のこもった声をいただけている",
+            ],
+            "background_concept": "morning_sky_purple",
+        },
+    },
+    # スライド002
+    {
+        "id": "002",
+        "pattern": "p2_deep_purple",
+        "params": {
+            "text_lines": [
+                "それなのに——",
+                "",
+                "なぜかしんどい",
+                "",
+                "朝目が覚めた瞬間から",
+                "今日のタスクの山が頭に押し寄せる",
+                "",
+                "夜になっても",
+                "頭の中で仕事が回り続けて",
+                "心が休まる時間がない",
+            ],
+            "emphasis_index": 2,  # 「なぜかしんどい」を強調
+        },
+    },
+    # ... 220枚分
+]
+
+# 一括実行
+function_map = {
+    "p1_gradient": render_pattern_1_gradient,
+    "p2_deep_purple": render_pattern_2_deep_purple,
+    "p3_message": render_pattern_3_message,
+    "p3_card": render_pattern_3_card,
+    "p3_list": render_pattern_3_list,
+    "p3_matrix": render_pattern_3_matrix,
+    "p4_sentimental": render_pattern_4_sentimental,
+    "p5_dark": render_pattern_5_dark,
+}
+
+for slide in slides_data:
+    func = function_map[slide["pattern"]]
+    func(slide_id=slide["id"], output_dir="./slides", **slide["params"])
+```
+
+### 関数実装時の絶対ルール
+
+1. **同じ関数を呼べば必ず同じスタイル**（外部から色やフォントを上書きしない）
+2. **テキスト量は引数の `text_lines` の中身だけが変わる**（フォントサイズ・位置・装飾は固定）
+3. **顔写真は円形クロップで320×320に固定**（カード型）
+4. **マージン・セーフゾーン・ワイプエリアは全関数で共通定数を参照**
+
+### 関数追加が必要な場合
+
+新たなレイアウトが必要（例：UTAGE機能一覧スライド用の「3アイコン横並び」）になった場合は、**既存の5関数を改造せず、新関数 `render_pattern_3_3icons()` のように追加する**こと。既存関数の挙動を変えると過去スライドの再生成時に結果がブレるため。
+
+---
+
+## 12. 関数実装＋10枚サンプルの依頼テンプレ（Codexへ最初に送る指示）
+
+```
+タスク：UTAGE VSLスライド生成システムの実装と10枚サンプル出力
+
+【参照】
+- `UTAGE_VSL_スライド制作指示書_for_Codex.md` の章11
+- `utage_palette_reference.png`（色見本）
+
+【実装内容】
+1. 章11で定義された8つのレンダリング関数を実装（PIL/Pillow使用）
+   - render_pattern_1_gradient
+   - render_pattern_2_deep_purple
+   - render_pattern_3_message / card / list / matrix
+   - render_pattern_4_sentimental
+   - render_pattern_5_dark
+
+2. 各関数の動作検証として、以下の10枚を生成してください：
+   - slide_001.png（p4_sentimental）
+   - slide_002.png（p2_deep_purple）
+   - slide_027.png（p1_gradient）
+   - slide_028.png（p3_list）
+   - slide_029-2.png（p3_card・加藤朋子さん）
+   - slide_029-4.png（p3_card・手塚正人さん）※②と同じp3_card関数で出すこと（一貫性チェック）
+   - slide_078.png（p1_gradient）
+   - slide_100.png（p1_gradient）
+   - slide_174.png（p5_dark）
+   - slide_193.png（p1_gradient）
+
+3. データは別添ファイル `10slides_sample_data.json` 参照
+
+【出力】
+- /slides/slide_XXX.png（10枚）
+- /tmp/sample_thumbs.png（10枚を1枚にまとめたサムネ・確認用）
+
+【絶対ルール】
+- 1枚ずつ自由生成しない（必ず関数経由）
+- カラーパレットは指示書記載のHEXのみ使用
+- 大賀VSLの煽り赤は禁止（#FF3D2F系の使用なし）
+```
+
+10枚分のデータは別添ファイル `10slides_sample_data.json` に格納（次セクション参照）。
