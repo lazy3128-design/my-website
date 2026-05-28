@@ -9,7 +9,10 @@
       "Bash(python3 -)",
       "Bash(cp \"/root/.claude/uploads/8d571773-1af0-4c40-b122-293e709964f7/1a942c5d-vsl_palette_01_navy_bronze_01_10.zip\" /tmp/utage_gpt_samples.zip)",
       "Bash(mkdir -p /tmp/utage_gpt_samples)",
-      "Bash(unzip -o /tmp/utage_gpt_samples.zip -d /tmp/utage_gpt_samples)"
+      "Bash(unzip -o /tmp/utage_gpt_samples.zip -d /tmp/utage_gpt_samples)",
+      "Bash(cp \"/root/.claude/uploads/754a835f-d84f-4466-a71e-6d8f13081c05/b1f678c5-______gpt_01_10.zip\" /tmp/gpt_new.zip)",
+      "Bash(mkdir -p /tmp/gpt_new)",
+      "Bash(unzip -o /tmp/gpt_new.zip -d /tmp/gpt_new)"
     ]
   }
 }
