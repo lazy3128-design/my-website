@@ -104,11 +104,27 @@
     <div class="row">
       <span>画像の形式</span>
       <select id="fmt">
+        <option value="webp" selected>WebP（軽量・おすすめ）</option>
         <option value="png">PNG（高画質・ファイル大）</option>
-        <option value="webp">WebP（軽量）</option>
       </select>
     </div>
     <div class="note">WebP は PNG よりファイルがかなり小さくなります（スライドの見た目はほぼ同じ）。</div>
+    <div class="row">
+      <span>画質（WebP）</span>
+      <select id="qual">
+        <option value="0.92">高画質（大きめ）</option>
+        <option value="0.8" selected>標準（おすすめ）</option>
+        <option value="0.65">軽量（最小）</option>
+      </select>
+    </div>
+    <div class="row">
+      <span>解像度の上限</span>
+      <select id="res">
+        <option value="1920">1920px（高精細）</option>
+        <option value="1280" selected>1280px（軽量・文字は十分読める）</option>
+      </select>
+    </div>
+    <div class="note">ファイルが大きすぎるときは「標準＋1280px」を基準に。ZIPは <b>24MB ごとに自動で分割</b>されるので、枚数が多くても各ファイルは必ず収まります。</div>
   </details>
 </div>
 
@@ -130,6 +146,7 @@ const $ = id => document.getElementById(id);
 const drop = $("drop"), fileInput = $("file"), video = $("video");
 const statusEl = $("status"), barWrap = $("barWrap"), barFill = $("barFill");
 const sens = $("sens"), cancelBtn = $("cancel"), skipBtn = $("skip"), fmtSel = $("fmt");
+const qualSel = $("qual"), resSel = $("res");
 
 let busy = false, cancelled = false, skipRequested = false;
 
@@ -420,8 +437,9 @@ async function processOne(file, mask, num) {
   const threshold = 0.030 - Number(sens.value) * 0.0025; // 感度スライダー
   const sampleStep = 1.0;   // 何秒ごとに調べるか
   const minGap = 1.2;       // 採用する間隔の最小秒数
-  const maxW = 1920;        // 出力画像の最大横幅
-  const fmt = fmtSel.value; // 出力画像の形式（png / webp）
+  const maxW = Number(resSel.value);          // 出力画像の最大横幅
+  const fmt = fmtSel.value;                    // 出力画像の形式（png / webp）
+  const quality = Number(qualSel.value);       // WebP品質（pngでは無視される）
 
   const scale = video.videoWidth > maxW ? maxW / video.videoWidth : 1;
   const fw = Math.round(video.videoWidth * scale);
@@ -436,7 +454,7 @@ async function processOne(file, mask, num) {
   async function capture(t) {
     fctx.drawImage(video, 0, 0, fw, fh);
     const blob = await new Promise(r =>
-      full.toBlob(r, "image/" + fmt, fmt === "webp" ? 0.92 : undefined));
+      full.toBlob(r, "image/" + fmt, fmt === "webp" ? quality : undefined));
     const bytes = new Uint8Array(await blob.arrayBuffer());
     slides.push({ bytes, w: fw, h: fh, t });
     const name = `${baseName}_${String(slides.length).padStart(3, "0")}.${fmt}`;
@@ -480,27 +498,65 @@ async function processOne(file, mask, num) {
 }
 
 // 出力ボタン（画像一括ZIP と PDF）を resultEl に表示する
+const ZIP_LIMIT = 24 * 1024 * 1024; // 1ZIPの上限（24MB）
+
+// スライドを24MB以下のまとまり（巻）に分ける。番号は通しのまま
+function splitVolumes(slides) {
+  const vols = [];
+  let cur = [], curBytes = 0;
+  for (const s of slides) {
+    const cost = s.bytes.length + 200; // ZIP1エントリ分の概算オーバーヘッド
+    if (cur.length && curBytes + cost > ZIP_LIMIT) {
+      vols.push(cur); cur = []; curBytes = 0;
+    }
+    cur.push(s); curBytes += cost;
+  }
+  if (cur.length) vols.push(cur);
+  return vols;
+}
+
 async function showDownloads(slides, baseName, resultEl, fmt) {
   resultEl.innerHTML = "";
 
-  const zipA = document.createElement("a");
-  zipA.href = URL.createObjectURL(buildZIP(slides, fmt, baseName));
-  zipA.download = baseName + "_slides.zip";
-  zipA.className = "btn dl";
-  zipA.textContent = `${fmt.toUpperCase()}画像をまとめてダウンロード（${slides.length}枚・001〜）`;
-  resultEl.appendChild(zipA);
+  // --- 画像ZIP（24MBごとに自動分割）---
+  const vols = splitVolumes(slides);
+  let startIndex = 0;
+  vols.forEach((vol, vi) => {
+    const from = startIndex + 1, to = startIndex + vol.length;
+    const zipA = document.createElement("a");
+    zipA.href = URL.createObjectURL(buildZIP(vol, fmt, baseName, startIndex));
+    zipA.download = vols.length > 1
+      ? `${baseName}_slides_${vi + 1}.zip`
+      : `${baseName}_slides.zip`;
+    zipA.className = "btn dl";
+    zipA.textContent = vols.length > 1
+      ? `${fmt.toUpperCase()}画像 (${vi + 1}/${vols.length})  ${String(from).padStart(3,"0")}〜${String(to).padStart(3,"0")}`
+      : `${fmt.toUpperCase()}画像をまとめてダウンロード（${slides.length}枚・001〜）`;
+    resultEl.appendChild(zipA);
+    startIndex = to;
+  });
 
-  // PDFは画像をJPEGに変換して埋め込む
-  const jpegs = [];
-  for (const s of slides) {
-    jpegs.push({ bytes: await imgToJpeg(s.bytes, s.w, s.h, fmt), w: s.w, h: s.h });
-  }
-  const pdfA = document.createElement("a");
-  pdfA.href = URL.createObjectURL(buildPDF(jpegs));
-  pdfA.download = baseName + "_slides.pdf";
-  pdfA.className = "btn dl2";
-  pdfA.textContent = `PDFにまとめてダウンロード（${slides.length}ページ）`;
-  resultEl.appendChild(pdfA);
+  // --- PDFは押されたときだけ生成（完了を速くするため）---
+  const pdfBtn = document.createElement("button");
+  pdfBtn.type = "button";
+  pdfBtn.className = "btn dl2";
+  pdfBtn.textContent = `PDFを作成（${slides.length}ページ）`;
+  pdfBtn.addEventListener("click", async () => {
+    pdfBtn.disabled = true;
+    pdfBtn.textContent = "PDF作成中…";
+    const jpegs = [];
+    for (const s of slides) {
+      jpegs.push({ bytes: await imgToJpeg(s.bytes, s.w, s.h, fmt), w: s.w, h: s.h });
+    }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(buildPDF(jpegs));
+    a.download = baseName + "_slides.pdf";
+    a.className = "btn dl2";
+    a.textContent = `PDFをダウンロード（${slides.length}ページ）`;
+    pdfBtn.replaceWith(a);
+    a.click();
+  });
+  resultEl.appendChild(pdfBtn);
 }
 
 // 画像バイト列をJPEGバイト列に変換する（PDF埋め込み用）
@@ -585,7 +641,7 @@ function crc32(buf) {
 }
 
 // 画像を詰めたZIPを手作りする（外部ライブラリ不要）
-function buildZIP(slides, fmt, baseName) {
+function buildZIP(slides, fmt, baseName, startIndex = 0) {
   const enc = s => new TextEncoder().encode(s);
   const u16 = n => new Uint8Array([n & 255, (n >> 8) & 255]);
   const u32 = n => new Uint8Array([n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >>> 24) & 255]);
@@ -595,7 +651,7 @@ function buildZIP(slides, fmt, baseName) {
 
   const central = [];
   slides.forEach((s, i) => {
-    const nameB = enc(`${baseName}_${String(i + 1).padStart(3, "0")}.${fmt}`);
+    const nameB = enc(`${baseName}_${String(startIndex + i + 1).padStart(3, "0")}.${fmt}`);
     const crc = crc32(s.bytes);
     const offset = len;
     push(u32(0x04034b50));
