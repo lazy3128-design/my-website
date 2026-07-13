@@ -1,694 +1,100 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>mp4スライド → PNG変換</title>
-<style>
-  :root { color-scheme: light; }
-  * { box-sizing: border-box; }
-  body {
-    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
-    margin: 0; background: #f4f5f7; color: #1f2328; line-height: 1.7;
-  }
-  .wrap { max-width: 760px; margin: 0 auto; padding: 32px 20px 64px; }
-  h1 { font-size: 22px; margin: 0 0 4px; }
-  .lead { color: #57606a; margin: 0 0 24px; font-size: 14px; }
-  #drop {
-    border: 3px dashed #c9ced6; border-radius: 14px; background: #fff;
-    padding: 48px 24px; text-align: center; cursor: pointer;
-    transition: border-color .15s, background .15s;
-  }
-  #drop:hover { border-color: #4c8dff; }
-  #drop.over { border-color: #4c8dff; background: #eef4ff; }
-  #drop .big { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
-  #drop .sub { font-size: 13px; color: #57606a; }
-  .btn {
-    display: inline-block; margin-top: 14px; padding: 10px 22px;
-    background: #4c8dff; color: #fff; border: none; border-radius: 8px;
-    font-size: 14px; font-weight: 700; cursor: pointer;
-  }
-  .btn:disabled { background: #b9c2cf; cursor: default; }
-  .btn.dl { background: #1f883d; font-size: 15px; padding: 13px 26px; }
-  .btn.dl2 { background: #57606a; font-size: 15px; padding: 13px 26px; }
-  .btn.cancel { background: #cf222e; margin-top: 12px; }
-  #status { margin-top: 20px; font-size: 14px; }
-  .bar { height: 12px; background: #e3e6ea; border-radius: 6px; overflow: hidden; margin-top: 8px; }
-  .bar > div { height: 100%; width: 0; background: #4c8dff; transition: width .2s; }
-  .gallery { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
-  .gallery img { width: 120px; border: 1px solid #d0d7de; border-radius: 4px; cursor: pointer; }
-  .gallery img:hover { border-color: #4c8dff; }
-  #result, .result { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
-  .vid-block { margin-top: 26px; padding-top: 18px; border-top: 1px solid #e3e6ea; }
-  .vid-block:first-child { border-top: none; padding-top: 0; }
-  .vid-block h3 { font-size: 15px; margin: 0; word-break: break-all; }
-  .lb { position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 100;
-        display: flex; align-items: center; justify-content: center; }
-  .lb-inner { display: flex; flex-direction: column; align-items: center; gap: 14px;
-              max-width: 94vw; max-height: 94vh; }
-  .lb-inner img { max-width: 94vw; max-height: 80vh; background: #fff; border-radius: 4px; }
-  .lb-bar { display: flex; gap: 12px; }
-  .lb-bar .btn { margin: 0; }
-  #preview { margin-top: 20px; }
-  .step { font-size: 13px; color: #57606a; margin: 0 0 10px; }
-  #prevCanvas {
-    max-width: 100%; border: 1px solid #d0d7de; border-radius: 6px;
-    cursor: crosshair; touch-action: none; display: block;
-  }
-  .prev-btns { display: flex; gap: 10px; }
-  .btn.ghost { background: #e3e6ea; color: #1f2328; }
-  details { margin-top: 26px; font-size: 13px; color: #57606a; }
-  summary { cursor: pointer; }
-  .row { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
-  .row input[type=range] { flex: 1; }
-  .note { font-size: 12px; color: #8a929c; margin-top: 4px; }
-  .hide { display: none; }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>slides2pdf has moved to DeckSift</title>
+  <meta name="description" content="slides2pdf has moved to DeckSift, a browser-based video slide extractor.">
+  <link rel="canonical" href="https://lazy3128-design.github.io/decksift/">
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Yu Gothic", Meiryo, sans-serif;
+      color: #1f2328;
+      background: #f6f8fa;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 32px 20px;
+    }
+    main {
+      width: min(680px, 100%);
+      border-top: 4px solid #1f883d;
+      padding-top: 28px;
+    }
+    .previous {
+      margin: 0 0 10px;
+      color: #59636e;
+      font-size: 14px;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(30px, 7vw, 48px);
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+    .lead {
+      margin: 22px 0 0;
+      max-width: 58ch;
+      font-size: 17px;
+      line-height: 1.8;
+    }
+    .english {
+      margin: 14px 0 0;
+      color: #59636e;
+      font-size: 14px;
+      line-height: 1.7;
+    }
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 30px;
+    }
+    a {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-weight: 700;
+      text-decoration: none;
+    }
+    .primary {
+      color: #fff;
+      background: #1f883d;
+    }
+    .secondary {
+      color: #0969da;
+      border: 1px solid #d0d7de;
+      background: #fff;
+    }
+    a:focus-visible {
+      outline: 3px solid #0969da;
+      outline-offset: 3px;
+    }
+  </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>mp4スライド → PNG変換</h1>
-  <p class="lead">動画の中でスライドが切り替わった場面を1枚ずつPNG画像にして取り出します。1つのPDFにまとめることもできます。インストール不要・ブラウザだけで動きます。</p>
-
-  <div id="drop">
-    <div class="big">ここに動画をドラッグ＆ドロップ</div>
-    <div class="sub">複数OK・処理中でも追加でドロップできます／または下のボタンから選択</div>
-    <button class="btn" id="pick" type="button">動画ファイルを選ぶ</button>
-    <input type="file" id="file" accept="video/mp4,video/*" multiple class="hide">
-  </div>
-
-  <div id="preview" class="hide">
-    <p class="step"><b>スライド以外で動く部分を囲ってください（任意）</b><br>
-    テロップや発表者のカメラ映像など、スライドと関係なく動く部分をマウスでドラッグして囲むと、その部分は切り替え判定から除外されます。複数囲めます。なければそのまま開始してOKです。</p>
-    <canvas id="prevCanvas"></canvas>
-    <div class="prev-btns" style="margin-top:10px;">
-      <button class="btn" id="goBtn" type="button">この設定で解析を開始</button>
-      <button class="btn ghost" id="clearZones" type="button">囲みを消す</button>
-    </div>
-  </div>
-
-  <div id="status"></div>
-  <div class="bar hide" id="barWrap"><div id="barFill"></div></div>
-  <button class="btn cancel hide" id="cancel" type="button">処理を中止する</button>
-  <button class="btn ghost hide" id="skip" type="button">この動画をスキップ ▶</button>
-  <div id="outputs"></div>
-
-  <details>
-    <summary>うまく取れないときの調整</summary>
-    <div class="row">
-      <span>枚数：少なめ</span>
-      <input type="range" id="sens" min="1" max="10" value="7">
-      <span>多め</span>
-    </div>
-    <div class="note">スライドが取りこぼされるときは「多め」に、関係ない画面まで増えすぎるときは「少なめ」に動かして、もう一度ドロップしてください。</div>
-    <div class="row">
-      <span>画像の形式</span>
-      <select id="fmt">
-        <option value="webp" selected>WebP（軽量・おすすめ）</option>
-        <option value="png">PNG（高画質・ファイル大）</option>
-      </select>
-    </div>
-    <div class="note">WebP は PNG よりファイルがかなり小さくなります（スライドの見た目はほぼ同じ）。</div>
-    <div class="row">
-      <span>画質（WebP）</span>
-      <select id="qual">
-        <option value="0.92">高画質（大きめ）</option>
-        <option value="0.8" selected>標準（おすすめ）</option>
-        <option value="0.65">軽量（最小）</option>
-      </select>
-    </div>
-    <div class="row">
-      <span>解像度の上限</span>
-      <select id="res">
-        <option value="1920">1920px（高精細）</option>
-        <option value="1280" selected>1280px（軽量・文字は十分読める）</option>
-      </select>
-    </div>
-    <div class="note">ファイルが大きすぎるときは「標準＋1280px」を基準に。ZIPは <b>24MB ごとに自動で分割</b>されるので、枚数が多くても各ファイルは必ず収まります。</div>
-  </details>
-</div>
-
-<video id="video" class="hide" muted playsinline preload="auto"></video>
-
-<div id="lightbox" class="lb hide">
-  <div class="lb-inner">
-    <img id="lbImg" alt="拡大表示">
-    <div class="lb-bar">
-      <a id="lbDl" class="btn dl" download>この画像を保存</a>
-      <button id="lbClose" class="btn" type="button">閉じる</button>
-    </div>
-  </div>
-</div>
-
-<script>
-"use strict";
-const $ = id => document.getElementById(id);
-const drop = $("drop"), fileInput = $("file"), video = $("video");
-const statusEl = $("status"), barWrap = $("barWrap"), barFill = $("barFill");
-const sens = $("sens"), cancelBtn = $("cancel"), skipBtn = $("skip"), fmtSel = $("fmt");
-const qualSel = $("qual"), resSel = $("res");
-
-let busy = false, cancelled = false, skipRequested = false;
-
-cancelBtn.addEventListener("click", () => {
-  cancelled = true;
-  cancelBtn.disabled = true;
-  cancelBtn.textContent = "中止しています…";
-});
-skipBtn.addEventListener("click", () => {
-  skipRequested = true;
-  skipBtn.disabled = true;
-  skipBtn.textContent = "スキップ中…";
-});
-
-// 拡大表示（ライトボックス）
-const lightbox = $("lightbox"), lbImg = $("lbImg"), lbDl = $("lbDl"), lbClose = $("lbClose");
-function openLightbox(src, name) {
-  lbImg.src = src;
-  lbDl.href = src;
-  lbDl.download = name;
-  lightbox.classList.remove("hide");
-}
-function closeLightbox() { lightbox.classList.add("hide"); }
-lbClose.addEventListener("click", closeLightbox);
-lightbox.addEventListener("click", e => { if (e.target === lightbox) closeLightbox(); });
-document.addEventListener("keydown", e => {
-  if (e.key === "Escape" && !lightbox.classList.contains("hide")) closeLightbox();
-});
-
-$("pick").addEventListener("click", e => { e.stopPropagation(); fileInput.click(); });
-drop.addEventListener("click", () => fileInput.click());
-fileInput.addEventListener("change", () => { if (fileInput.files.length) intake([...fileInput.files]); });
-
-["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e => {
-  e.preventDefault(); drop.classList.add("over");
-}));
-["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => {
-  e.preventDefault(); drop.classList.remove("over");
-}));
-drop.addEventListener("drop", e => {
-  e.preventDefault();
-  const fs = [...e.dataTransfer.files];
-  if (fs.length) intake(fs);
-});
-
-// ドロップ／選択された動画を受け取る。準備済みなら順番待ちへ、未準備なら除外範囲の指定へ
-function intake(files) {
-  files = files.filter(f => !f.type || f.type.startsWith("video"));
-  if (!files.length) { setStatus("⚠ 動画ファイルが見つかりませんでした。"); return; }
-  if (!zonesReady) {
-    if (!busy) start(files);
-  } else {
-    queue.push(...files);
-    if (draining) setStatus(`動画 ${files.length}本 を順番待ちに追加しました。`);
-    else drainQueue();
-  }
-}
-
-function setStatus(msg) { statusEl.textContent = msg; }
-
-function seekTo(t) {
-  return new Promise(resolve => {
-    let done = false;
-    const finish = () => { if (done) return; done = true; video.removeEventListener("seeked", finish); resolve(); };
-    video.addEventListener("seeked", finish);
-    setTimeout(finish, 3000); // 念のためのタイムアウト
-    video.currentTime = t;
-  });
-}
-
-// 画面を縮小グレースケール格子にする
-const GRID = 64;        // 格子の細かさ
-const CELL_TH = 25;     // 1マスが「変わった」とみなす明るさ差
-function signature() {
-  const c = signature._c || (signature._c = document.createElement("canvas"));
-  c.width = GRID; c.height = GRID;
-  const ctx = c.getContext("2d", { willReadFrequently: true });
-  ctx.drawImage(video, 0, 0, GRID, GRID);
-  const d = ctx.getImageData(0, 0, GRID, GRID).data;
-  const g = new Uint8ClampedArray(GRID * GRID);
-  for (let i = 0; i < GRID * GRID; i++) {
-    g[i] = 0.299 * d[i*4] + 0.587 * d[i*4+1] + 0.114 * d[i*4+2];
-  }
-  return g;
-}
-// 変化したマスの割合を返す（mask が 0 のマスは判定から除外）
-function diff(a, b, mask) {
-  let changed = 0, total = 0;
-  for (let i = 0; i < a.length; i++) {
-    if (!mask[i]) continue;
-    total++;
-    if (Math.abs(a[i] - b[i]) > CELL_TH) changed++;
-  }
-  return total ? changed / total : 0;
-}
-
-// 除外範囲（zones）から判定用マスクを作る。1=判定に使う / 0=無視
-function buildMask(zones) {
-  const mask = new Uint8Array(GRID * GRID).fill(1);
-  for (let i = 0; i < mask.length; i++) {
-    const nx = (i % GRID + 0.5) / GRID, ny = ((i / GRID | 0) + 0.5) / GRID;
-    for (const z of zones) {
-      if (nx >= z.x && nx <= z.x + z.w && ny >= z.y && ny <= z.y + z.h) {
-        mask[i] = 0; break;
-      }
-    }
-  }
-  // 囲みすぎて判定マスが少なすぎる場合は全面に戻す
-  let used = 0;
-  for (const m of mask) used += m;
-  return used >= 64 ? mask : new Uint8Array(GRID * GRID).fill(1);
-}
-
-// --- 状態 ---
-let currentURL = null, zones = [], prevBase = null, loadedFile = null;
-let dragStart = null, tempRect = null, pendingFiles = null;
-let queue = [], draining = false, zonesReady = false, videoNum = 0;
-const prevCanvas = $("prevCanvas"), outputs = $("outputs");
-
-function resetUI() {
-  outputs.innerHTML = "";
-  $("preview").classList.add("hide");
-  barWrap.classList.add("hide"); barFill.style.width = "0%";
-  cancelBtn.classList.add("hide");
-}
-
-// 動画(複数可)を読み込み、1本目でプレビュー（除外範囲の指定）へ進む
-async function start(files) {
-  files = files.filter(f => !f.type || f.type.startsWith("video"));
-  if (!files.length) { setStatus("⚠ 動画ファイルが見つかりませんでした。"); return; }
-  busy = true; cancelled = false;
-  resetUI();
-  zones = []; queue = []; videoNum = 0; loadedFile = null;
-  setStatus(files.length > 1
-    ? `${files.length}本の動画を読み込んでいます…`
-    : "動画を読み込んでいます…");
-
-  if (currentURL) URL.revokeObjectURL(currentURL);
-  currentURL = URL.createObjectURL(files[0]);
-  video.src = currentURL;
-  try {
-    await new Promise((res, rej) => {
-      video.onloadedmetadata = res;
-      video.onerror = () => rej(new Error("最初の動画ファイルが読み込めませんでした。"));
-    });
-  } catch (err) {
-    setStatus("⚠ " + err.message);
-    busy = false; return;
-  }
-  loadedFile = files[0];
-  await showPreview(files);
-}
-
-// 代表コマを表示して除外範囲の指定を受け付ける
-async function showPreview(files) {
-  await seekTo(Math.min(video.duration * 0.3, Math.max(0, video.duration - 0.1)));
-  const pw = Math.min(video.videoWidth, 640);
-  const ph = Math.round(pw * video.videoHeight / video.videoWidth);
-  prevCanvas.width = pw; prevCanvas.height = ph;
-  prevBase = document.createElement("canvas");
-  prevBase.width = pw; prevBase.height = ph;
-  prevBase.getContext("2d").drawImage(video, 0, 0, pw, ph);
-  drawPreview();
-  $("preview").classList.remove("hide");
-  setStatus(files.length > 1
-    ? `${files.length}本の動画を処理します。囲んだ除外範囲は全動画に共通で適用されます。`
-    : "テロップやカメラ映像を囲んだら「解析を開始」を押してください。");
-  pendingFiles = files;
-  busy = false; // プレビュー中は別の動画も受け付ける
-}
-
-function drawPreview() {
-  const ctx = prevCanvas.getContext("2d");
-  ctx.drawImage(prevBase, 0, 0);
-  ctx.lineWidth = 2; ctx.strokeStyle = "#cf222e";
-  ctx.fillStyle = "rgba(207,34,46,.30)";
-  const all = tempRect ? zones.concat([tempRect]) : zones;
-  for (const z of all) {
-    const x = z.x * prevCanvas.width, y = z.y * prevCanvas.height;
-    const w = z.w * prevCanvas.width, h = z.h * prevCanvas.height;
-    ctx.fillRect(x, y, w, h); ctx.strokeRect(x, y, w, h);
-  }
-}
-
-function canvasPos(e) {
-  const b = prevCanvas.getBoundingClientRect();
-  return {
-    x: Math.min(1, Math.max(0, (e.clientX - b.left) / b.width)),
-    y: Math.min(1, Math.max(0, (e.clientY - b.top) / b.height)),
-  };
-}
-function rectFrom(a, b) {
-  return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y),
-           w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };
-}
-prevCanvas.addEventListener("pointerdown", e => {
-  dragStart = canvasPos(e); prevCanvas.setPointerCapture(e.pointerId);
-});
-prevCanvas.addEventListener("pointermove", e => {
-  if (!dragStart) return;
-  tempRect = rectFrom(dragStart, canvasPos(e)); drawPreview();
-});
-prevCanvas.addEventListener("pointerup", e => {
-  if (!dragStart) return;
-  const r = rectFrom(dragStart, canvasPos(e));
-  dragStart = null; tempRect = null;
-  if (r.w > 0.02 && r.h > 0.02) zones.push(r);
-  drawPreview();
-});
-$("clearZones").addEventListener("click", () => { zones = []; drawPreview(); });
-$("goBtn").addEventListener("click", () => {
-  if (!pendingFiles || draining) return;
-  zonesReady = true;
-  queue.push(...pendingFiles);
-  pendingFiles = null;
-  drainQueue();
-});
-
-// 順番待ちの動画を1本ずつ処理する。処理中に追加された動画も続けて処理する
-async function drainQueue() {
-  if (draining) return;
-  draining = true; busy = true; cancelled = false;
-  $("preview").classList.add("hide");
-  barWrap.classList.remove("hide");
-  cancelBtn.classList.remove("hide");
-  cancelBtn.disabled = false;
-  cancelBtn.textContent = "すべて中止";
-  skipBtn.classList.remove("hide");
-
-  const mask = buildMask(zones); // 除外範囲を反映した判定マスク（全動画共通）
-  let stoppedEarly = false;
-  while (queue.length) {
-    if (cancelled) { stoppedEarly = true; break; }
-    const file = queue.shift();
-    videoNum++;
-    try {
-      await processOne(file, mask, videoNum);
-    } catch (err) {
-      setStatus(`⚠ ${file.name} の処理でエラーが出ました。次の動画へ進みます。`);
-    }
-  }
-  if (cancelled) queue = [];
-  cancelBtn.classList.add("hide");
-  skipBtn.classList.add("hide");
-  draining = false; busy = false;
-  setStatus((stoppedEarly ? "中止しました（順番待ちはクリアしました）。" : "すべて完了しました。") +
-            "動画を追加でドロップすると、続けて処理できます。");
-}
-
-// 動画1本を処理し、専用の出力ブロックを作る
-async function processOne(file, mask, num) {
-  const tag = `(${num}本目) `;
-  const baseName = file.name.replace(/\.[^.]+$/, "");
-
-  const block = document.createElement("div");
-  block.className = "vid-block";
-  const head = document.createElement("h3");
-  head.textContent = tag + file.name;
-  const gal = document.createElement("div");
-  gal.className = "gallery";
-  const res = document.createElement("div");
-  res.className = "result";
-  block.append(head, gal, res);
-  outputs.appendChild(block);
-
-  skipRequested = false;
-  skipBtn.disabled = false;
-  skipBtn.textContent = "この動画をスキップ ▶";
-
-  // この動画がまだ読み込まれていなければ読み込む
-  if (loadedFile !== file) {
-    if (currentURL) URL.revokeObjectURL(currentURL);
-    currentURL = URL.createObjectURL(file);
-    video.src = currentURL;
-    try {
-      await new Promise((ok, ng) => {
-        video.onloadedmetadata = ok;
-        video.onerror = () => ng(new Error("読み込めませんでした"));
-      });
-      loadedFile = file;
-    } catch (err) {
-      head.textContent = `${tag}${file.name} — ⚠ ${err.message}`;
-      return;
-    }
-  }
-
-  const duration = video.duration;
-  const threshold = 0.030 - Number(sens.value) * 0.0025; // 感度スライダー
-  const sampleStep = 1.0;   // 何秒ごとに調べるか
-  const minGap = 1.2;       // 採用する間隔の最小秒数
-  const maxW = Number(resSel.value);          // 出力画像の最大横幅
-  const fmt = fmtSel.value;                    // 出力画像の形式（png / webp）
-  const quality = Number(qualSel.value);       // WebP品質（pngでは無視される）
-
-  const scale = video.videoWidth > maxW ? maxW / video.videoWidth : 1;
-  const fw = Math.round(video.videoWidth * scale);
-  const fh = Math.round(video.videoHeight * scale);
-  const full = document.createElement("canvas");
-  full.width = fw; full.height = fh;
-  const fctx = full.getContext("2d");
-
-  const slides = [];   // { bytes, w, h }
-  let lastSig = null, lastCapT = -999;
-
-  async function capture(t) {
-    fctx.drawImage(video, 0, 0, fw, fh);
-    const blob = await new Promise(r =>
-      full.toBlob(r, "image/" + fmt, fmt === "webp" ? quality : undefined));
-    const bytes = new Uint8Array(await blob.arrayBuffer());
-    slides.push({ bytes, w: fw, h: fh, t });
-    const name = `${baseName}_${String(slides.length).padStart(3, "0")}.${fmt}`;
-    const img = document.createElement("img");
-    img.src = URL.createObjectURL(blob);
-    img.title = `${name}（クリックで拡大）`;
-    img.addEventListener("click", () => openLightbox(img.src, name));
-    gal.appendChild(img);
-    lastCapT = t;
-  }
-
-  barFill.style.width = "0%";
-  for (let t = 0; t < duration; t += sampleStep) {
-    if (cancelled || skipRequested) break;
-    await seekTo(Math.min(t, duration - 0.05));
-    const sig = signature();
-    if (lastSig === null) {
-      await capture(t);                                  // 先頭スライド
-    } else if (diff(sig, lastSig, mask) > threshold && (t - lastCapT) >= minGap) {
-      await capture(t);                                  // 画面が変わった
-    }
-    lastSig = sig;
-    const pct = Math.min(100, t / duration * 100);
-    barFill.style.width = pct + "%";
-    setStatus(`${tag}${file.name} — スライドを探しています… ${Math.round(pct)}％（${slides.length}枚）`
-      + (queue.length ? `／待機 ${queue.length}本` : ""));
-  }
-  if (!cancelled && !skipRequested) barFill.style.width = "100%";
-
-  if (!slides.length) {
-    head.textContent = `${tag}${file.name} — ` +
-      (cancelled ? "中止しました"
-       : skipRequested ? "スキップしました"
-       : "⚠ スライドを検出できませんでした");
-    return;
-  }
-  const note = skipRequested ? "（スキップ・途中まで）" : "";
-  head.textContent = `${tag}${file.name} — ${slides.length}枚${note}`;
-  setStatus(`${tag}${file.name} — 仕上げ中…（${slides.length}枚）`);
-  await showDownloads(slides, baseName, res, fmt);
-}
-
-// 出力ボタン（画像一括ZIP と PDF）を resultEl に表示する
-const ZIP_LIMIT = 24 * 1024 * 1024; // 1ZIPの上限（24MB）
-
-// スライドを24MB以下のまとまり（巻）に分ける。番号は通しのまま
-function splitVolumes(slides) {
-  const vols = [];
-  let cur = [], curBytes = 0;
-  for (const s of slides) {
-    const cost = s.bytes.length + 200; // ZIP1エントリ分の概算オーバーヘッド
-    if (cur.length && curBytes + cost > ZIP_LIMIT) {
-      vols.push(cur); cur = []; curBytes = 0;
-    }
-    cur.push(s); curBytes += cost;
-  }
-  if (cur.length) vols.push(cur);
-  return vols;
-}
-
-async function showDownloads(slides, baseName, resultEl, fmt) {
-  resultEl.innerHTML = "";
-
-  // --- 画像ZIP（24MBごとに自動分割）---
-  const vols = splitVolumes(slides);
-  let startIndex = 0;
-  vols.forEach((vol, vi) => {
-    const from = startIndex + 1, to = startIndex + vol.length;
-    const zipA = document.createElement("a");
-    zipA.href = URL.createObjectURL(buildZIP(vol, fmt, baseName, startIndex));
-    zipA.download = vols.length > 1
-      ? `${baseName}_slides_${vi + 1}.zip`
-      : `${baseName}_slides.zip`;
-    zipA.className = "btn dl";
-    zipA.textContent = vols.length > 1
-      ? `${fmt.toUpperCase()}画像 (${vi + 1}/${vols.length})  ${String(from).padStart(3,"0")}〜${String(to).padStart(3,"0")}`
-      : `${fmt.toUpperCase()}画像をまとめてダウンロード（${slides.length}枚・001〜）`;
-    resultEl.appendChild(zipA);
-    startIndex = to;
-  });
-
-  // --- PDFは押されたときだけ生成（完了を速くするため）---
-  const pdfBtn = document.createElement("button");
-  pdfBtn.type = "button";
-  pdfBtn.className = "btn dl2";
-  pdfBtn.textContent = `PDFを作成（${slides.length}ページ）`;
-  pdfBtn.addEventListener("click", async () => {
-    pdfBtn.disabled = true;
-    pdfBtn.textContent = "PDF作成中…";
-    const jpegs = [];
-    for (const s of slides) {
-      jpegs.push({ bytes: await imgToJpeg(s.bytes, s.w, s.h, fmt), w: s.w, h: s.h });
-    }
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(buildPDF(jpegs));
-    a.download = baseName + "_slides.pdf";
-    a.className = "btn dl2";
-    a.textContent = `PDFをダウンロード（${slides.length}ページ）`;
-    pdfBtn.replaceWith(a);
-    a.click();
-  });
-  resultEl.appendChild(pdfBtn);
-}
-
-// 画像バイト列をJPEGバイト列に変換する（PDF埋め込み用）
-async function imgToJpeg(bytes, w, h, fmt) {
-  const bmp = await createImageBitmap(new Blob([bytes], { type: "image/" + fmt }));
-  const c = document.createElement("canvas");
-  c.width = w; c.height = h;
-  c.getContext("2d").drawImage(bmp, 0, 0);
-  const blob = await new Promise(r => c.toBlob(r, "image/jpeg", 0.9));
-  return new Uint8Array(await blob.arrayBuffer());
-}
-
-// JPEG画像を埋め込んだPDFを手作りする（外部ライブラリ不要）
-function buildPDF(images) {
-  const enc = s => new TextEncoder().encode(s);
-  const parts = [];
-  let len = 0;
-  const offsets = {};
-  const push = data => {
-    const d = typeof data === "string" ? enc(data) : data;
-    parts.push(d); len += d.length;
-  };
-  const startObj = id => { offsets[id] = len; };
-
-  push("%PDF-1.4\n");
-  push(new Uint8Array([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]));
-
-  startObj(1);
-  push("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
-
-  const kids = images.map((_, i) => `${3 + 3*i} 0 R`).join(" ");
-  startObj(2);
-  push(`2 0 obj\n<< /Type /Pages /Kids [${kids}] /Count ${images.length} >>\nendobj\n`);
-
-  images.forEach((img, i) => {
-    const pid = 3 + 3*i, cid = 4 + 3*i, iid = 5 + 3*i;
-    const content = `q ${img.w} 0 0 ${img.h} 0 0 cm /Im0 Do Q`;
-
-    startObj(pid);
-    push(`${pid} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${img.w} ${img.h}]` +
-         ` /Resources << /XObject << /Im0 ${iid} 0 R >> >> /Contents ${cid} 0 R >>\nendobj\n`);
-
-    startObj(cid);
-    push(`${cid} 0 obj\n<< /Length ${enc(content).length} >>\nstream\n${content}\nendstream\nendobj\n`);
-
-    startObj(iid);
-    push(`${iid} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${img.w} /Height ${img.h}` +
-         ` /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${img.bytes.length} >>\nstream\n`);
-    push(img.bytes);
-    push("\nendstream\nendobj\n");
-  });
-
-  const total = 2 + 3 * images.length;
-  const xrefAt = len;
-  let xref = `xref\n0 ${total + 1}\n0000000000 65535 f \n`;
-  for (let id = 1; id <= total; id++) {
-    xref += String(offsets[id]).padStart(10, "0") + " 00000 n \n";
-  }
-  push(xref);
-  push(`trailer\n<< /Size ${total + 1} /Root 1 0 R >>\nstartxref\n${xrefAt}\n%%EOF\n`);
-
-  const out = new Uint8Array(len);
-  let p = 0;
-  for (const d of parts) { out.set(d, p); p += d.length; }
-  return new Blob([out], { type: "application/pdf" });
-}
-
-// CRC32（ZIPで各ファイルに必要）
-function crc32(buf) {
-  const tbl = crc32._t || (crc32._t = (() => {
-    const t = new Uint32Array(256);
-    for (let n = 0; n < 256; n++) {
-      let c = n;
-      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
-      t[n] = c >>> 0;
-    }
-    return t;
-  })());
-  let crc = 0xFFFFFFFF;
-  for (let i = 0; i < buf.length; i++) crc = (crc >>> 8) ^ tbl[(crc ^ buf[i]) & 0xFF];
-  return (crc ^ 0xFFFFFFFF) >>> 0;
-}
-
-// 画像を詰めたZIPを手作りする（外部ライブラリ不要）
-function buildZIP(slides, fmt, baseName, startIndex = 0) {
-  const enc = s => new TextEncoder().encode(s);
-  const u16 = n => new Uint8Array([n & 255, (n >> 8) & 255]);
-  const u32 = n => new Uint8Array([n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >>> 24) & 255]);
-  const parts = [];
-  let len = 0;
-  const push = data => { parts.push(data); len += data.length; };
-
-  const central = [];
-  slides.forEach((s, i) => {
-    const nameB = enc(`${baseName}_${String(startIndex + i + 1).padStart(3, "0")}.${fmt}`);
-    const crc = crc32(s.bytes);
-    const offset = len;
-    push(u32(0x04034b50));
-    push(u16(20)); push(u16(0)); push(u16(0));        // version, flags, method=store
-    push(u16(0)); push(u16(0));                        // time, date
-    push(u32(crc)); push(u32(s.bytes.length)); push(u32(s.bytes.length));
-    push(u16(nameB.length)); push(u16(0));
-    push(nameB);
-    push(s.bytes);
-    central.push({ nameB, crc, size: s.bytes.length, offset });
-  });
-
-  const cdStart = len;
-  central.forEach(c => {
-    push(u32(0x02014b50));
-    push(u16(20)); push(u16(20)); push(u16(0)); push(u16(0)); // made-by, need, flags, method
-    push(u16(0)); push(u16(0));                                // time, date
-    push(u32(c.crc)); push(u32(c.size)); push(u32(c.size));
-    push(u16(c.nameB.length)); push(u16(0)); push(u16(0));     // name, extra, comment
-    push(u16(0)); push(u16(0));                                // disk, internal attrs
-    push(u32(0));                                              // external attrs
-    push(u32(c.offset));
-    push(c.nameB);
-  });
-
-  const cdSize = len - cdStart;
-  push(u32(0x06054b50));
-  push(u16(0)); push(u16(0));
-  push(u16(central.length)); push(u16(central.length));
-  push(u32(cdSize)); push(u32(cdStart));
-  push(u16(0));
-
-  const out = new Uint8Array(len);
-  let p = 0;
-  for (const d of parts) { out.set(d, p); p += d.length; }
-  return new Blob([out], { type: "application/zip" });
-}
-</script>
+  <main>
+    <p class="previous">Formerly slides2pdf</p>
+    <h1>DeckSiftへ移動しました</h1>
+    <p class="lead">
+      動画からスライドを抽出するツール「slides2pdf」は、DeckSiftとして独立したオープンソースプロジェクトになりました。
+      WebP・PNG・分割ZIP・PDF・時刻CSVの出力に対応しています。
+    </p>
+    <p class="english">
+      slides2pdf is now DeckSift. The tool has moved to a dedicated open-source repository and a new live demo.
+    </p>
+    <nav aria-label="DeckSift links">
+      <a class="primary" href="https://lazy3128-design.github.io/decksift/">DeckSiftを開く</a>
+      <a class="secondary" href="https://github.com/lazy3128-design/decksift">GitHubで見る</a>
+    </nav>
+  </main>
 </body>
 </html>
